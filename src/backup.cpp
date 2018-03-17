@@ -2,6 +2,7 @@
  * @file backup.cpp
  * Make a backup of a source file
  * The current plans are to use two files.
+ 980f: use a subdirectory so that backups don't clutter the source directory.
  *
  *  - A '.unc-backup~' file that contains the original contents
  *  - A '.unc-backup-md5~' file that contains the MD5 over the last output
@@ -35,6 +36,21 @@
 
 using namespace std;
 
+//#alh{ //todo: make these two strings configuration options
+#if USEDIR4BACKUP
+#define BAKFILE "bak/%s"
+#define MD5FILE "bak/%s.md5"
+#else
+#define BAKFILE "%s" UNC_BACKUP_SUFFIX
+#define MD5FILE "%s" UNC_BACKUP_MD5_SUFFIX
+#endif
+
+int makeBackupName( char*path,unsigned pathused,const char*filename,bool forMD5){
+  return //might as well pass back snprintf return value
+  snprintf(path, pathused, forMD5?MD5FILE:BAKFILE , filename);
+}
+//#alh}
+ 
 
 int backup_copy_file(const char *filename, const vector<UINT8> &data)
 {
@@ -54,7 +70,8 @@ int backup_copy_file(const char *filename, const vector<UINT8> &data)
             dig[12], dig[13], dig[14], dig[15]);
 
    // Create the backup-md5 filename, open it and read the md5
-   snprintf(newpath, sizeof(newpath), "%s%s", filename, UNC_BACKUP_MD5_SUFFIX);
+  //#980f: snprintf(newpath, sizeof(newpath), "%s%s", filename, UNC_BACKUP_MD5_SUFFIX);
+   makeBackupName(newpath, sizeof(newpath), filename, true);
 
    FILE *thefile = fopen(newpath, "rb");
    if (thefile != nullptr)
@@ -88,7 +105,8 @@ int backup_copy_file(const char *filename, const vector<UINT8> &data)
    LOG_FMT(LNOTE, "%s: MD5 mismatch - backing up %s\n", __func__, filename);
 
    // Create the backup file
-   snprintf(newpath, sizeof(newpath), "%s%s", filename, UNC_BACKUP_SUFFIX);
+  //#980f: snprintf(newpath, sizeof(newpath), "%s%s", filename, UNC_BACKUP_SUFFIX);
+   makeBackupName(newpath, sizeof(newpath), filename, false);
 
    thefile = fopen(newpath, "wb");
    if (thefile != nullptr)
@@ -145,7 +163,9 @@ void backup_create_md5_file(const char *filename)
    fclose(thefile);
    md5.Final(dig);
 
-   snprintf(newpath, sizeof(newpath), "%s%s", filename, UNC_BACKUP_MD5_SUFFIX);
+//#980f:   snprintf(newpath, sizeof(newpath), "%s%s", filename, UNC_BACKUP_MD5_SUFFIX);
+    makeBackupName(newpath, sizeof(newpath), filename, true);
+
 
    thefile = fopen(newpath, "wb");
    if (thefile != nullptr)
