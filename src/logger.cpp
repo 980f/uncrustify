@@ -10,14 +10,11 @@
  * @license GPL v2+
  */
 
-#include "compat.h"
 #include "logger.h"
-#include "uncrustify_types.h"
-#include "unc_ctype.h"
-#include "log_levels.h"
-#include <cstdio>
-#include <deque>
-#include <stdarg.h>
+
+#include "compat.h"
+
+#include <cstdarg>                   // to get va_start, va_end
 
 
 struct log_fcn_info
@@ -43,16 +40,20 @@ struct log_buf
       , buf_len(0)
       , show_hdr(false)
    {
+      bufX.clear();
+      bufX.resize(256);
    }
 
-   FILE       *log_file;  //! file where the log messages are stored into
-   log_sev_t  sev;        //! log level determines which messages are logged
-   int        in_log;     //! flag indicates if a log operation is going on
-   char       buf[256];   //! buffer holds the log message
-   size_t     buf_len;    //! number of characters currently stored in buffer
-   log_mask_t mask;
-   bool       show_hdr;   //! flag determine if a header gets added to log message
+   FILE              *log_file; //! file where the log messages are stored into
+   log_sev_t         sev;       //! log level determines which messages are logged
+   int               in_log;    //! flag indicates if a log operation is going on
+   size_t            buf_len;   //! number of characters currently stored in buffer
+   std::vector<char> bufX;      //! buffer holds the log message
+   log_mask_t        mask;
+   bool              show_hdr;  //! flag determine if a header gets added to log message
 };
+
+
 static struct log_buf g_log;
 
 
@@ -70,7 +71,7 @@ static size_t log_start(log_sev_t sev);
  * Cleans up after a log statement by detecting whether the log is done,
  * (it ends in a newline) and possibly flushing the log.
  */
-static void log_end(void);
+static void log_end();
 
 
 /**
@@ -125,16 +126,18 @@ void log_flush(bool force_nl)
 {
    if (g_log.buf_len > 0)
    {
-      if (force_nl && g_log.buf[g_log.buf_len - 1] != '\n')
+      if (  force_nl
+         && g_log.bufX[g_log.buf_len - 1] != '\n')
       {
-         g_log.buf[g_log.buf_len++] = '\n';
-         g_log.buf[g_log.buf_len]   = 0;
+         g_log.bufX[g_log.buf_len++] = '\n';
+         g_log.bufX[g_log.buf_len]   = 0;
       }
-      if (fwrite(g_log.buf, g_log.buf_len, 1, g_log.log_file) != 1)
+      size_t retlength = fwrite(&g_log.bufX[0], g_log.buf_len, 1, g_log.log_file);
+
+      if (retlength != 1)
       {
          // maybe we should log something to complain... =)
       }
-
       g_log.buf_len = 0;
    }
 }
@@ -153,218 +156,111 @@ static size_t log_start(log_sev_t sev)
    }
 
    // If not in a log, the buffer is empty. Add the header, if enabled.
-   if (!g_log.in_log && g_log.show_hdr)
+   if (  !g_log.in_log
+      && g_log.show_hdr)
    {
-      g_log.buf_len = static_cast<size_t>(snprintf(g_log.buf, sizeof(g_log.buf), "<%d>", sev));
+      g_log.buf_len = static_cast<size_t>(snprintf(&g_log.bufX[0], g_log.bufX.size(), "<%d>", sev));
    }
-
-   size_t cap = (sizeof(g_log.buf) - 2) - g_log.buf_len;
+   size_t cap = (g_log.bufX.size() - 2) - g_log.buf_len;
 
    return((cap > 0) ? cap : 0);
 }
 
 
-static void log_end(void)
+static void log_end()
 {
-   g_log.in_log = (g_log.buf[g_log.buf_len - 1] != '\n');
+   g_log.in_log = (g_log.bufX[g_log.buf_len - 1] != '\n');
+
    if (  !g_log.in_log
-      || (g_log.buf_len > static_cast<int>(sizeof(g_log.buf) / 2)))
+      || (g_log.buf_len > (g_log.bufX.size() / 2)))
    {
       log_flush(false);
    }
 }
 
 
-void log_str(log_sev_t sev, const char *str, size_t len)
+void log_fmt(log_sev_t sev, const char *fmt, ...)
 {
-   if (  str == nullptr
-      || len == 0
+   if (  fmt == nullptr
       || !log_sev_on(sev))
    {
       return;
    }
-
-   size_t cap = log_start(sev);
-   if (cap > 0)
-   {
-      if (len > cap)
-      {
-         len = cap;
-      }
-      memcpy(&g_log.buf[g_log.buf_len], str, len);
-      g_log.buf_len           += len;
-      g_log.buf[g_log.buf_len] = 0;
-   }
-   log_end();
-}
-
-
-void log_fmt(log_sev_t sev, const char *fmt, ...)
-{
-   if (fmt == nullptr || !log_sev_on(sev))
-   {
-      return;
-   }
-
    // Issue #1203
-   if (strlen(fmt) == 0)
+   unsigned int length = strlen(fmt);
+
+   if (length == 0)
    {
       return;
    }
+   // the value of buffer_length is experimental
+   const int buffer_length = 40000;
+   char      buf[buffer_length];
 
-#define BUFFERLENGTH    200
-   char         buf[BUFFERLENGTH];
    // it MUST be a 'unsigned int' variable to be runable under windows
-   unsigned int length = strlen(fmt);
-   if (length >= BUFFERLENGTH)
+
+   if (length >= buffer_length)
    {
-      fprintf(stderr, "FATAL: The variable 'buf' is not big enought:\n");
-      fprintf(stderr, "   it should be bigger as = %u\n", length);
+      fprintf(stderr, "FATAL(1): The variable 'buf' is not big enough:\n");
+      fprintf(stderr, "   it should be bigger as %u\n", length);
       fprintf(stderr, "Please make a report.\n");
+      fprintf(stderr, "For the buffer: %s\n", fmt);
       exit(EX_SOFTWARE);
    }
    memcpy(buf, fmt, length);
    buf[length] = 0;
    convert_log_zu2lu(buf);
 
-   /* Some implementation of vsnprintf() return the number of characters
-    * that would have been stored if the buffer was large enough instead of
-    * the number of characters actually stored.
-    *
-    * this gets the number of characters that fit into the log buffer
-    */
-   size_t cap = log_start(sev);
-
-   // Add on the variable log parameters to the log string
-   va_list args;        // determine list of arguments ...
-   va_start(args, fmt); //  ... that follow after parameter fmt
-   size_t  len = static_cast<size_t>(vsnprintf(&g_log.buf[g_log.buf_len], cap, buf, args));
-   va_end(args);
-
-   if (len > 0)
+   while (true)
    {
-      bool softwareErrorFound = false;
-      if (len > cap)
+      /* Some implementation of vsnprintf() return the number of characters
+       * that would have been stored if the buffer was large enough instead of
+       * the number of characters actually stored.
+       *
+       * this gets the number of characters that fit into the log buffer
+       */
+      size_t  cap = log_start(sev);
+      // Add on the variable log parameters to the log string
+      va_list args;        // determine list of arguments ...
+      va_start(args, fmt);
+      size_t  which  = g_log.buf_len;
+      char    *where = &g_log.bufX[which];
+      size_t  lenX   = static_cast<size_t>(vsnprintf(where, cap, buf, args));
+      va_end(args);
+
+      if (lenX > 0)
       {
-         softwareErrorFound = true;
-         len                = cap;
-      }
-      g_log.buf_len           += len;
-      g_log.buf[g_log.buf_len] = 0;
-      if (softwareErrorFound)
-      {
-         g_log.buf[g_log.buf_len - 1] = '\n';
-         fprintf(stderr, "WARNING: The variable 'g_log.buf' is not big enought:\n");
-         fprintf(stderr, "   it should be bigger as = %zu\n", len);
-         fprintf(stderr, "   The first part of the message is:\n");
-         fprintf(stderr, "   %s\n", g_log.buf);
+         // The functions snprintf() and vsnprintf() do not  write  more  than  size  bytes
+         // (including  the terminating null byte ('\0')).  If the output was truncated due
+         // to this limit, then the return value is the number of characters (excluding the
+         // terminating  null  byte)  which  would have been written to the final string if
+         // enough space had been available.  Thus, a return value of size  or  more  means
+         // that the output was truncated.
+         if (lenX > cap)
+         {
+            size_t bufXLength = g_log.bufX.size();
+            size_t X          = bufXLength * 2;
+
+            if (X >= buffer_length)
+            {
+               fprintf(stderr, "FATAL(2): The variable 'buf' is not big enough:\n");
+               fprintf(stderr, "   it should be bigger as %zu\n", X);
+               fprintf(stderr, "Please make a report.\n");
+               fprintf(stderr, "For the buffer: %s\n", fmt);
+               exit(EX_SOFTWARE);
+            }
+            g_log.bufX.resize(X);
+         }
+         else
+         {
+            g_log.buf_len            += lenX;
+            g_log.bufX[g_log.buf_len] = 0;
+            break;
+         }
       }
    }
-
    log_end();
 } // log_fmt
-
-
-void log_hex(log_sev_t sev, const void *vdata, size_t len)
-{
-   if (vdata == nullptr || !log_sev_on(sev))
-   {
-      return;
-   }
-
-#define MAX_BUF    80
-   char        buf[MAX_BUF];
-   const UINT8 *dat = static_cast<const UINT8 *>(vdata);
-   size_t      idx  = 0;
-   while (len-- > 0)
-   {
-      buf[idx++] = to_hex_char(*dat >> 4);
-      buf[idx++] = to_hex_char(*dat);
-      dat++;
-
-      // prevent an overflow
-      if (idx >= (MAX_BUF - 3))
-      {
-         buf[idx] = 0;
-         log_str(sev, buf, idx);
-         idx = 0;
-      }
-   }
-
-   if (idx > 0)
-   {
-      buf[idx] = 0;
-      log_str(sev, buf, idx);
-   }
-}
-
-
-void log_hex_blk(log_sev_t sev, const void *data, size_t len)
-{
-   if (data == nullptr || !log_sev_on(sev))
-   {
-      return;
-   }
-
-   static char buf[80] = "nnn | XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX | cccccccccccccccc\n";
-   const UINT8 *dat    = static_cast<const UINT8 *>(data);
-   int         str_idx = 0;
-   int         chr_idx = 0;
-
-   /*
-    * Dump the specified number of bytes in hex, 16 byte per line by
-    * creating a string and then calling log_str()
-    */
-
-   // Loop through the data of the current iov
-   int count = 0;
-   int total = 0;
-   for (size_t idx = 0; idx < len; idx++)
-   {
-      if (count == 0)
-      {
-         str_idx = 6;
-         chr_idx = 56;
-
-         buf[0] = to_hex_char(total >> 12);
-         buf[1] = to_hex_char(total >> 8);
-         buf[2] = to_hex_char(total >> 4);
-      }
-
-      int tmp = dat[idx];
-
-      buf[str_idx]     = to_hex_char(tmp >> 4);
-      buf[str_idx + 1] = to_hex_char(tmp);
-      str_idx         += 3;
-
-      buf[chr_idx++] = unc_isprint(tmp) ? tmp : '.';
-
-      total++;
-      count++;
-      if (count >= 16)
-      {
-         count = 0;
-         log_str(sev, buf, 73);
-      }
-   }
-
-   // Print partial line if any
-   if (count != 0)
-   {
-      // Clear out any junk
-      while (count < 16)
-      {
-         buf[str_idx]     = ' ';   // MSB hex
-         buf[str_idx + 1] = ' ';   // LSB hex
-         str_idx         += 3;
-
-         buf[chr_idx++] = ' ';
-
-         count++;
-      }
-      log_str(sev, buf, 73);
-   }
-} // log_hex_blk
 
 
 log_func::log_func(const char *name, int line)
@@ -379,21 +275,11 @@ log_func::~log_func()
 }
 
 
-void log_func_call(int line)
-{
-   // REVISIT: pass the __func__ and verify it matches the top entry?
-   if (!g_fq.empty())
-   {
-      g_fq.back().line = line;
-   }
-}
-
-
 void log_func_stack(log_sev_t sev, const char *prefix, const char *suffix, size_t skip_cnt)
 {
    UNUSED(skip_cnt);
 
-   if (prefix)
+   if (prefix != nullptr)
    {
       LOG_FMT(sev, "%s", prefix);
    }
@@ -401,21 +287,50 @@ void log_func_stack(log_sev_t sev, const char *prefix, const char *suffix, size_
    const char *sep      = "";
    size_t     g_fq_size = g_fq.size();
    size_t     begin_with;
+
    if (g_fq_size > (skip_cnt + 1))
    {
       begin_with = g_fq_size - (skip_cnt + 1);
+
       for (size_t idx = begin_with; idx != 0; idx--)
       {
          LOG_FMT(sev, "%s %s:%d", sep, g_fq[idx].name, g_fq[idx].line);
          sep = ",";
       }
+
       LOG_FMT(sev, "%s %s:%d", sep, g_fq[0].name, g_fq[0].line);
    }
 #else
    LOG_FMT(sev, "-DEBUG NOT SET-");
 #endif
-   if (suffix)
+
+   if (suffix != nullptr)
    {
       LOG_FMT(sev, "%s", suffix);
    }
+}
+
+
+const char *get_unqualified_func_name(const char *func)
+{
+   /**
+    * we look for the last ':' character;
+    */
+   for (auto i = strlen(func); i > 0; --i)
+   {
+      if (func[i - 1] == ':')
+      {
+         /**
+          * function name is qualified, so return the
+          * unqualified portion
+          */
+         return(func + i);
+      }
+   }
+
+   /**
+    * input function name is unqualified
+    */
+
+   return(func);
 }

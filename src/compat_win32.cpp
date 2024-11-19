@@ -10,8 +10,9 @@
    && !defined (__CYGWIN__)
 
 #include "windows_compat.h"
-#include <string>
+
 #include <cstdio>
+#include <string>
 
 
 bool unc_getenv(const char *name, std::string &str)
@@ -26,19 +27,20 @@ bool unc_getenv(const char *name, std::string &str)
          return(false);
       }
    }
-
    buf = (char *)malloc(len);
-   if (buf)
+
+   if (buf != nullptr)
    {
-      len = GetEnvironmentVariableA(name, buf, len);
+      len      = GetEnvironmentVariableA(name, buf, len);
+      buf[len] = 0;
+
+      str = buf;
+      //printf("%s: name=%s len=%zu value=%s\n", __func__, name, len, str.c_str());
+      free(buf);
+
+      return(true);
    }
-   buf[len] = 0;
-
-   str = buf;
-   printf("%s: name=%s len=%d value=%s\n", __func__, name, (int)len, str.c_str());
-   free(buf);
-
-   return(true);
+   return(false);
 }
 
 
@@ -48,12 +50,15 @@ bool unc_homedir(std::string &home)
    {
       return(true);
    }
+
    if (unc_getenv("USERPROFILE", home))
    {
       return(true);
    }
    std::string hd, hp;
-   if (unc_getenv("HOMEDRIVE", hd) && unc_getenv("HOMEPATH", hp))
+
+   if (  unc_getenv("HOMEDRIVE", hd)
+      && unc_getenv("HOMEPATH", hp))
    {
       home = hd + hp;
       return(true);

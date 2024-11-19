@@ -11,36 +11,38 @@
 #define UNC_TEXT_H_INCLUDED
 
 #include "base_types.h"
-#include <vector>
+
 #include <deque>
 #include <string>
+#include <vector>
+
 
 /**
  *  abbreviations used:
  * - unc_text - uncrustify text
  */
 
-class unc_text
+class UncText
 {
 public:
    typedef std::deque<int>      value_type; // double encoded list of int values
    typedef std::vector<UINT8>   log_type;
 
 
-   unc_text();
+   UncText();
 
-   unc_text(const unc_text &ref);
+   UncText(const UncText &ref);
 
-   unc_text(const unc_text &ref, size_t idx, size_t len = 0);
+   UncText(const UncText &ref, size_t idx, size_t len = 0);
 
-   unc_text(const char *ascii_text);
+   UncText(const char *ascii_text);
 
-   unc_text(const std::string &ascii_text);
+   UncText(const std::string &ascii_text);
 
-   unc_text(const value_type &data, size_t idx = 0, size_t len = 0);
+   UncText(const value_type &data, size_t idx = 0, size_t len = 0);
 
 
-   ~unc_text() = default;
+   ~UncText() = default;
 
 
    void resize(size_t new_size);
@@ -55,9 +57,9 @@ public:
 
    void set(int ch);
 
-   void set(const unc_text &ref);
+   void set(const UncText &ref);
 
-   void set(const unc_text &ref, size_t idx, size_t len = 0);
+   void set(const UncText &ref, size_t idx, size_t len = 0);
 
    void set(const std::string &ascii_text);
 
@@ -66,18 +68,18 @@ public:
    void set(const value_type &data, size_t idx = 0, size_t len = 0);
 
 
-   unc_text &operator =(int ch);
+   UncText &operator=(int ch);
 
-   unc_text &operator =(const unc_text &ref);
+   UncText &operator=(const UncText &ref);
 
-   unc_text &operator =(const std::string &ascii_text);
+   UncText &operator=(const std::string &ascii_text);
 
-   unc_text &operator =(const char *ascii_text);
+   UncText &operator=(const char *ascii_text);
 
 
    void insert(size_t idx, int ch);
 
-   void insert(size_t idx, const unc_text &ref);
+   void insert(size_t idx, const UncText &ref);
 
 
    void erase(size_t idx, size_t len = 1);
@@ -86,7 +88,7 @@ public:
    //! Add a unc_text character to an unc_text
    void append(int ch);
 
-   void append(const unc_text &ref);
+   void append(const UncText &ref);
 
    //! Add a string to an unc_text
    void append(const std::string &ascii_text);
@@ -104,13 +106,13 @@ public:
    void append(const value_type &data, size_t idx = 0, size_t len = 0);
 
 
-   unc_text &operator +=(int ch);
+   UncText &operator+=(int ch);
 
-   unc_text &operator +=(const unc_text &ref);
+   UncText &operator+=(const UncText &ref);
 
-   unc_text &operator +=(const std::string &ascii_text);
+   UncText &operator+=(const std::string &ascii_text);
 
-   unc_text &operator +=(const char *ascii_text);
+   UncText &operator+=(const char *ascii_text);
 
 
    //! Returns the UTF-8 string for logging
@@ -123,15 +125,16 @@ public:
     * @param ref1  first  instance to compare
     * @param ref2  second instance to compare
     * @param len   number of character to compare
+    * @param tcare take care of case (lower case/ upper case)                  Issue #2091
     *
     * @retval == 0  both text elements are equal
     * @retval  > 0
     * @retval  < 0
     */
-   static int compare(const unc_text &ref1, const unc_text &ref2, size_t len = 0);
+   static int compare(const UncText &ref1, const UncText &ref2, size_t len = 0, bool tcare = false);
 
 
-   bool equals(const unc_text &ref) const;
+   bool equals(const UncText &ref) const;
 
 
    //! grab the data as a series of ints for outputting to a file
@@ -143,6 +146,7 @@ public:
 
    // throws an exception if out of bounds
    const int &at(size_t idx) const;
+   int &at(size_t idx);
 
 
    //! returns the last element of the character list
@@ -158,13 +162,13 @@ public:
    void pop_front();
 
 
-   bool startswith(const unc_text &text, size_t idx = 0) const;
+   bool startswith(const UncText &text, size_t idx = 0) const;
 
    bool startswith(const char *text, size_t idx = 0) const;
 
 
    /**
-    * look for 'text', beginning with position 'sidx'
+    * look for 'text', beginning with position 'idx'
     *
     * @param text  text to search for
     * @param idx   position to start search
@@ -178,7 +182,7 @@ public:
    int rfind(const char *text, size_t idx = 0) const;
 
 
-   int replace(const char *oldtext, const unc_text &newtext);
+   int replace(const char *oldtext, const UncText &newtext);
 
 
 protected:
@@ -187,6 +191,5 @@ protected:
    value_type m_chars;           //! this contains the non-encoded 31-bit chars
    log_type   m_logtext;         //! logging text, utf8 encoded - updated in c_str()
 };
-
 
 #endif /* UNC_TEXT_H_INCLUDED */

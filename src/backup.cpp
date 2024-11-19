@@ -23,16 +23,14 @@
  * @author  Ben Gardner
  * @license GPL v2+
  */
+
 #include "prototypes.h"
+
 #include "backup.h"
 #include "md5.h"
-#include "logger.h"
-#include <cstdio>
-#include <cerrno>
 #include "unc_ctype.h"
-#include <cstring>
-#include "uncrustify.h"
 
+#include <cerrno>
 
 using namespace std;
 
@@ -61,7 +59,7 @@ int backup_copy_file(const char *filename, const vector<UINT8> &data)
 
    md5_str_in[0] = 0;
 
-   MD5::Calc(&data[0], data.size(), dig);
+   MD5::Calc(data.data(), data.size(), dig);
    snprintf(md5_str, sizeof(md5_str),
             "%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x\n",
             dig[0], dig[1], dig[2], dig[3],
@@ -74,9 +72,11 @@ int backup_copy_file(const char *filename, const vector<UINT8> &data)
    makeBackupName(newpath, sizeof(newpath), filename, true);
 
    FILE *thefile = fopen(newpath, "rb");
+
    if (thefile != nullptr)
    {
       char buffer[128];
+
       if (fgets(buffer, sizeof(buffer), thefile) != nullptr)
       {
          for (int i = 0; buffer[i] != 0; i++)
@@ -101,7 +101,6 @@ int backup_copy_file(const char *filename, const vector<UINT8> &data)
       LOG_FMT(LNOTE, "%s: MD5 match for %s\n", __func__, filename);
       return(EX_OK);
    }
-
    LOG_FMT(LNOTE, "%s: MD5 mismatch - backing up %s\n", __func__, filename);
 
    // Create the backup file
@@ -109,26 +108,28 @@ int backup_copy_file(const char *filename, const vector<UINT8> &data)
    makeBackupName(newpath, sizeof(newpath), filename, false);
 
    thefile = fopen(newpath, "wb");
+
    if (thefile != nullptr)
    {
-      size_t retval   = fwrite(&data[0], data.size(), 1, thefile);
+      size_t retval   = fwrite(data.data(), data.size(), 1, thefile);
       int    my_errno = errno;
 
       fclose(thefile);
 
-      if (retval == 1)
+      if (  retval == 1
+         || data.empty())
       {
          return(EX_OK);
       }
       LOG_FMT(LERR, "fwrite(%s) failed: %s (%d)\n",
               newpath, strerror(my_errno), my_errno);
-      cpd.error_count++;
+      exit(EX_SOFTWARE);
    }
    else
    {
       LOG_FMT(LERR, "fopen(%s) failed: %s (%d)\n",
               newpath, strerror(errno), errno);
-      cpd.error_count++;
+      exit(EX_SOFTWARE);
    }
    return(EX_IOERR);
 } // backup_copy_file
@@ -146,12 +147,12 @@ void backup_create_md5_file(const char *filename)
    md5.Init();
 
    thefile = fopen(filename, "rb");
+
    if (thefile == nullptr)
    {
       LOG_FMT(LERR, "%s: fopen(%s) failed: %s (%d)\n",
               __func__, filename, strerror(errno), errno);
-      cpd.error_count++;
-      return;
+      exit(EX_SOFTWARE);
    }
 
    // read file chunk by chunk and calculate its MD5 checksum
@@ -159,7 +160,6 @@ void backup_create_md5_file(const char *filename)
    {
       md5.Update(buf, len);
    }
-
    fclose(thefile);
    md5.Final(dig);
 
@@ -168,6 +168,7 @@ void backup_create_md5_file(const char *filename)
 
 
    thefile = fopen(newpath, "wb");
+
    if (thefile != nullptr)
    {
       fprintf(thefile,

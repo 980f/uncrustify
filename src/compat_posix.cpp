@@ -5,18 +5,17 @@
  * @author  Ben Gardner
  * @license GPL v2+
  */
+
 #ifndef WIN32
 
 #include "uncrustify_types.h"
-#include <cstdlib>
-#include <string>
 
 
 bool unc_getenv(const char *name, std::string &str)
 {
    const char *val = getenv(name);
 
-   if (val)
+   if (val != nullptr)
    {
       str = val;
       return(true);

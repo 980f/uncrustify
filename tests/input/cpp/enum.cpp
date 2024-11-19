@@ -16,15 +16,15 @@ enum class comment_align_e : unsigned int
    ENDIF,
 };
 
-// chunk_list.h
-enum class scope_e : unsigned int
+// chunk.h
+enum class E_Scope : unsigned int
 {
    ALL,      /**< search in all kind of chunks */
    PREPROC,  /**< search only in preprocessor chunks */
 };
 
-// chunk_list.cpp
-enum class direction_e : unsigned int
+// chunk.cpp
+enum class E_Direction : unsigned int
 {
    FORWARD,
    BACKWARD
@@ -151,8 +151,8 @@ enum log_sev_t
    LINDENTAG = 88, /* indent again */
    LNFD      = 89, /* newline-function-def */
    LJDBI     = 90, /* Java Double Brace Init */
-   LSETPAR   = 91, /* set_chunk_parent() */
-   LSETTYP   = 92, /* set_chunk_type() */
+   LSETPAR   = 91, /* Chunk::SetParentType() */
+   LSETTYP   = 92, /* Chunk::SetType() */
    LSETFLG   = 93, /* set_chunk_flags() */
    LNLFUNCT  = 94, /* newlines before function */
    LCHUNK    = 95, /* Add or del chunk */

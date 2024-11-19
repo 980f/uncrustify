@@ -5,54 +5,56 @@
  * @author  Ben Gardner
  * @license GPL v2+
  */
-#include "braces.h"
-#include "uncrustify_types.h"
-#include "chunk_list.h"
-#include "prototypes.h"
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include "unc_ctype.h"
-#include "uncrustify.h"
-#include "combine.h"
-#include "newlines.h"
-#include "chunk_list.h"
 
-#include <vector>
+#include "braces.h"
+
+#include "calculate_closing_brace_position.h"
+#include "newlines/add.h"
+#include "newlines/between.h"
+#include "newlines/del_between.h"
+#include "prototypes.h"
+#include "tokenizer/combine_tools.h"
+
+
+constexpr static auto LCURRENT = LBR;
 
 
 using std::vector;
+using namespace uncrustify;
 
 
 //! Converts a single brace into a virtual brace
-static void convert_brace(chunk_t *br);
+static void convert_brace(Chunk *br);
 
 
 //! Converts a single virtual brace into a real brace
-static void convert_vbrace(chunk_t *br);
+static void convert_vbrace(Chunk *br);
 
 
-static void convert_vbrace_to_brace(void);
+static void convert_vbrace_to_brace();
 
 
 //! Go backwards to honor brace newline removal limits
-static void examine_braces(void);
+static void examine_braces();
 
 
 /**
  * Step forward and count the number of semi colons at the current level.
  * Abort if more than 1 or if we enter a preprocessor
  */
-static void examine_brace(chunk_t *bopen);
+static void examine_brace(Chunk *bopen);
 
 
-static void move_case_break(void);
+static void move_case_break();
 
 
-static void mod_case_brace(void);
+static void move_case_return();
 
 
-static void mod_full_brace_if_chain(void);
+static void mod_case_brace();
+
+
+static void mod_full_brace_if_chain();
 
 
 /**
@@ -60,7 +62,7 @@ static void mod_full_brace_if_chain(void);
  *  - less than a certain length
  *  - doesn't mess up if/else stuff
  */
-static bool can_remove_braces(chunk_t *bopen);
+static bool can_remove_braces(Chunk *bopen);
 
 
 /**
@@ -71,22 +73,22 @@ static bool can_remove_braces(chunk_t *bopen);
  *
  * @return true (convert to real braces) or false (leave alone)
  */
-static bool should_add_braces(chunk_t *vbopen);
+static bool should_add_braces(Chunk *vbopen);
 
 
 /**
  * Collect the text into txt that contains the full tag name.
  * Mainly for collecting namespace 'a.b.c' or function 'foo::bar()' names.
  */
-static void append_tag_name(unc_text &txt, chunk_t *pc);
+static void append_tag_name(UncText &txt, Chunk *pc);
 
 
 //! Remove the case brace, if allowable.
-static chunk_t *mod_case_brace_remove(chunk_t *br_open);
+static Chunk *mod_case_brace_remove(Chunk *br_open);
 
 
 //! Add the case brace, if allowable.
-static chunk_t *mod_case_brace_add(chunk_t *cl_colon);
+static Chunk *mod_case_brace_add(Chunk *cl_colon);
 
 
 /**
@@ -94,7 +96,7 @@ static chunk_t *mod_case_brace_add(chunk_t *cl_colon);
  *
  * @param br_start  chunk pointing to opening brace of if clause
  */
-static void process_if_chain(chunk_t *br_start);
+static void process_if_chain(Chunk *br_start);
 
 
 /**
@@ -103,8 +105,7 @@ static void process_if_chain(chunk_t *br_start);
  *
  * @param brace  the brace chunk whose predecessing parenthesis will be checked
  *
- * @pre   the brace chunk cannot be a nullptr,
- *        it needs to be of type CT_BRACE_OPEN or CT_BRACE_CLOSE,
+ * @pre   it needs to be of type CT_BRACE_OPEN or CT_BRACE_CLOSE,
  *        its parent type needs to be one of this types:
  *            CT_IF, CT_ELSEIF, CT_FOR, CT_USING_STMT, CT_WHILE,
  *            CT_FUNC_CLASS_DEF, CT_FUNC_DEF
@@ -114,215 +115,259 @@ static void process_if_chain(chunk_t *br_start);
  *                 parenthesis or
  *                 when no newlines are found between the parenthesis
  */
-static bool paren_multiline_before_brace(chunk_t *brace)
+static bool paren_multiline_before_brace(Chunk *brace)
 {
-   if (  brace == nullptr
-      || (brace->type != CT_BRACE_OPEN && brace->type != CT_BRACE_CLOSE)
-      || (  brace->parent_type != CT_IF
-         && brace->parent_type != CT_ELSEIF
-         && brace->parent_type != CT_FOR
-         && brace->parent_type != CT_USING_STMT
-         && brace->parent_type != CT_WHILE
-         && brace->parent_type != CT_FUNC_CLASS_DEF
-         && brace->parent_type != CT_FUNC_DEF))
+   if (  (  brace->IsNot(CT_BRACE_OPEN)
+         && brace->IsNot(CT_BRACE_CLOSE))
+      || (  brace->GetParentType() != CT_IF
+         && brace->GetParentType() != CT_ELSEIF
+         && brace->GetParentType() != CT_FOR
+         && brace->GetParentType() != CT_USING_STMT
+         && brace->GetParentType() != CT_WHILE
+         && brace->GetParentType() != CT_FUNC_CLASS_DEF
+         && brace->GetParentType() != CT_FUNC_DEF))
    {
       return(false);
    }
    const auto paren_t = CT_SPAREN_CLOSE;
 
    // find parenthesis pair of the if/for/while/...
-   auto paren_close = chunk_get_prev_type(brace, paren_t, brace->level, scope_e::ALL);
-   auto paren_open  = chunk_skip_to_match_rev(paren_close, scope_e::ALL);
+   auto paren_close = brace->GetPrevType(paren_t, brace->GetLevel(), E_Scope::ALL);
+   auto paren_open  = paren_close->GetOpeningParen();
 
-   if (  paren_close == nullptr
-      || paren_open == nullptr
+   if (  paren_close->IsNullChunk()
+      || paren_open->IsNullChunk()
       || paren_close == brace
       || paren_open == paren_close)
    {
       return(false);
    }
-
    // determine number of lines in the parenthesis pair spans
-   auto       nl_count = size_t {};
+   auto       nl_count = size_t{};
    const auto ret_flag = newlines_between(paren_open, paren_close, nl_count);
+
    if (!ret_flag)
    {
-      LOG_FMT(LERR, "newlines_between error\n");
+      LOG_FMT(LERR, "%s(%d): newlines_between error\n", __func__, __LINE__);
       return(false);
    }
-
    // nl_count = 0 -> 1 line
    return(nl_count > 0);
 }
 
 
-void do_braces(void)
+void do_braces()
 {
    LOG_FUNC_ENTRY();
-   if (  cpd.settings[UO_mod_full_brace_if_chain].b
-      || cpd.settings[UO_mod_full_brace_if_chain_only].b)
-   {
-      mod_full_brace_if_chain();
-   }
-
-   if ((cpd.settings[UO_mod_full_brace_if].a |
-        cpd.settings[UO_mod_full_brace_do].a |
-        cpd.settings[UO_mod_full_brace_for].a |
-        cpd.settings[UO_mod_full_brace_using].a |
-        cpd.settings[UO_mod_full_brace_while].a) & AV_REMOVE)
-   {
-      examine_braces();
-   }
-
-   // convert vbraces if needed
-   if ((cpd.settings[UO_mod_full_brace_if].a |
-        cpd.settings[UO_mod_full_brace_do].a |
-        cpd.settings[UO_mod_full_brace_for].a |
-        cpd.settings[UO_mod_full_brace_function].a |
-        cpd.settings[UO_mod_full_brace_using].a |
-        cpd.settings[UO_mod_full_brace_while].a) & AV_ADD)
-   {
-      convert_vbrace_to_brace();
-   }
-
    // Mark one-liners
-   chunk_t *pc = chunk_get_head();
-   while ((pc = chunk_get_next_ncnl(pc)) != nullptr)
+   // Issue #2232 put this at the beginning
+   Chunk *pc = Chunk::GetHead()->GetNextNcNnl();
+
+   while (pc->IsNotNullChunk())
    {
-      if (pc->type != CT_BRACE_OPEN && pc->type != CT_VBRACE_OPEN)
+      if (  pc->IsNot(CT_BRACE_OPEN)
+         && pc->IsNot(CT_VBRACE_OPEN))
       {
+         pc = pc->GetNextNcNnl();
          continue;
       }
-      chunk_t         *br_open = pc;
-      const c_token_t brc_type = c_token_t(pc->type + 1); // corresponds to closing type
+      Chunk         *br_open = pc;
+      const E_Token brc_type = E_Token(pc->GetType() + 1); // corresponds to closing type
       // Detect empty bodies
-      chunk_t         *tmp = chunk_get_next_ncnl(pc);
-      if (chunk_is_token(tmp, brc_type))
-      {
-         chunk_flags_set(br_open, PCF_EMPTY_BODY);
-         chunk_flags_set(tmp, PCF_EMPTY_BODY);
-      }
+      Chunk         *tmp = pc->GetNextNcNnl();
 
-      // Scan for the brace close or a newline
-      tmp = br_open;
-      while ((tmp = chunk_get_next_nc(tmp)) != nullptr)
+      if (tmp->Is(brc_type))
       {
-         if (chunk_is_newline(tmp))
+         br_open->SetFlagBits(PCF_EMPTY_BODY);
+         tmp->SetFlagBits(PCF_EMPTY_BODY);
+      }
+      // Scan for the brace close or a newline
+      tmp = br_open->GetNextNc();
+
+      while (tmp->IsNotNullChunk())
+      {
+         if (tmp->IsNewline())
          {
             break;
          }
-         if (tmp->type == brc_type && br_open->level == tmp->level)
+
+         if (  tmp->Is(brc_type)
+            && br_open->GetLevel() == tmp->GetLevel())
          {
             flag_series(br_open, tmp, PCF_ONE_LINER);
             break;
          }
+         tmp = tmp->GetNextNc();
       }
+      pc = pc->GetNextNcNnl();
    }
+   log_rule_B("mod_full_brace_if_chain");
+   log_rule_B("mod_full_brace_if_chain_only");
 
-   if (cpd.settings[UO_mod_case_brace].a != AV_IGNORE)
+   if (  options::mod_full_brace_if_chain()
+      || options::mod_full_brace_if_chain_only())
+   {
+      mod_full_brace_if_chain();
+   }
+   log_rule_B("mod_full_brace_if");
+   log_rule_B("mod_full_brace_do");
+   log_rule_B("mod_full_brace_for");
+   log_rule_B("mod_full_brace_using");
+   log_rule_B("mod_full_brace_while");
+
+   if ((options::mod_full_brace_if() |
+        options::mod_full_brace_do() |
+        options::mod_full_brace_for() |
+        options::mod_full_brace_using() |
+        options::mod_full_brace_while()) & IARF_REMOVE)
+   {
+      examine_braces();
+   }
+   // convert vbraces if needed
+   log_rule_B("mod_full_brace_if");
+   log_rule_B("mod_full_brace_do");
+   log_rule_B("mod_full_brace_for");
+   log_rule_B("mod_full_brace_function");
+   log_rule_B("mod_full_brace_using");
+   log_rule_B("mod_full_brace_while");
+
+   if ((options::mod_full_brace_if() |
+        options::mod_full_brace_do() |
+        options::mod_full_brace_for() |
+        options::mod_full_brace_function() |
+        options::mod_full_brace_using() |
+        options::mod_full_brace_while()) & IARF_ADD)
+   {
+      convert_vbrace_to_brace();
+   }
+   log_rule_B("mod_case_brace");
+
+   if (options::mod_case_brace() != IARF_IGNORE)
    {
       mod_case_brace();
    }
-   if (cpd.settings[UO_mod_move_case_break].b)
+   log_rule_B("mod_move_case_break");
+
+   if (options::mod_move_case_break())
    {
       move_case_break();
+   }
+   log_rule_B("mod_move_case_return");
+
+   if (options::mod_move_case_return())
+   {
+      move_case_return();
    }
 } // do_braces
 
 
-static void examine_braces(void)
+static void examine_braces()
 {
    LOG_FUNC_ENTRY();
 
-   const auto multiline_block = cpd.settings[UO_mod_full_brace_nl_block_rem_mlcond].b;
+   log_rule_B("mod_full_brace_nl_block_rem_mlcond");
+   const auto multiline_block = options::mod_full_brace_nl_block_rem_mlcond();
 
-   for (auto pc = chunk_get_tail(); pc != nullptr;)
+   log_rule_B("mod_full_brace_if");
+   log_rule_B("mod_full_brace_do");
+   log_rule_B("mod_full_brace_for");
+   log_rule_B("mod_full_brace_using");
+   log_rule_B("mod_full_brace_while");
+
+   for (Chunk *pc = Chunk::GetTail(); pc->IsNotNullChunk();)
    {
-      auto prev = chunk_get_prev_type(pc, CT_BRACE_OPEN, -1);
+      Chunk *prev = pc->GetPrevType(CT_BRACE_OPEN);
 
-      if (  pc->type == CT_BRACE_OPEN
-         && ((pc->flags & PCF_IN_PREPROC) == 0)
-         && (  (  (  pc->parent_type == CT_IF
-                  || pc->parent_type == CT_ELSE
-                  || pc->parent_type == CT_ELSEIF)
-               && cpd.settings[UO_mod_full_brace_if].a == AV_REMOVE)
-            || (  pc->parent_type == CT_DO
-               && cpd.settings[UO_mod_full_brace_do].a == AV_REMOVE)
-            || (  pc->parent_type == CT_FOR
-               && cpd.settings[UO_mod_full_brace_for].a == AV_REMOVE)
-            || (  pc->parent_type == CT_USING_STMT
-               && cpd.settings[UO_mod_full_brace_using].a == AV_REMOVE)
-            || (  pc->parent_type == CT_WHILE
-               && cpd.settings[UO_mod_full_brace_while].a == AV_REMOVE)))
+      if (  pc->Is(CT_BRACE_OPEN)
+         && !pc->TestFlags(PCF_IN_PREPROC)
+         && (  (  (  pc->GetParentType() == CT_IF
+                  || pc->GetParentType() == CT_ELSE
+                  || pc->GetParentType() == CT_ELSEIF)
+               && options::mod_full_brace_if() == IARF_REMOVE)
+            || (  pc->GetParentType() == CT_DO
+               && options::mod_full_brace_do() == IARF_REMOVE)
+            || (  pc->GetParentType() == CT_FOR
+               && options::mod_full_brace_for() == IARF_REMOVE)
+            || (  pc->GetParentType() == CT_USING_STMT
+               && options::mod_full_brace_using() == IARF_REMOVE)
+            || (  pc->GetParentType() == CT_WHILE
+               && options::mod_full_brace_while() == IARF_REMOVE)))
       {
-         if (multiline_block && paren_multiline_before_brace(pc))
+         if (  multiline_block
+            && paren_multiline_before_brace(pc))
          {
             pc = prev;
             continue;
          }
-
          examine_brace(pc);
       }
-
       pc = prev;
    }
-}
+} // examine_braces
 
 
-static bool should_add_braces(chunk_t *vbopen)
+static bool should_add_braces(Chunk *vbopen)
 {
    LOG_FUNC_ENTRY();
-   const size_t nl_max = cpd.settings[UO_mod_full_brace_nl].u;
+   log_rule_B("mod_full_brace_nl");
+   const size_t nl_max = options::mod_full_brace_nl();
+
    if (nl_max == 0)
    {
       return(false);
    }
-   LOG_FMT(LBRDEL, "%s: start on %zu : ", __func__, vbopen->orig_line);
+   LOG_FMT(LBRDEL, "%s(%d): start on %zu:\n",
+           __func__, __LINE__, vbopen->GetOrigLine());
 
-   size_t  nl_count = 0;
+   size_t nl_count = 0;
 
-   chunk_t *pc = nullptr;
-   for (pc = chunk_get_next_nc(vbopen, scope_e::PREPROC);
-        pc != nullptr && pc->level > vbopen->level;
-        pc = chunk_get_next_nc(pc, scope_e::PREPROC))
+   Chunk  *pc = Chunk::NullChunkPtr;
+
+   for (pc = vbopen->GetNextNc(E_Scope::PREPROC);
+        (pc->IsNotNullChunk() && pc->GetLevel() > vbopen->GetLevel());
+        pc = pc->GetNextNc(E_Scope::PREPROC))
    {
-      if (chunk_is_newline(pc))
+      if (pc->IsNewline())
       {
-         nl_count += pc->nl_count;
+         nl_count += pc->GetNlCount();
       }
    }
 
-   if (  pc != nullptr
+   if (  pc->IsNotNullChunk()
       && nl_count > nl_max
-      && vbopen->pp_level == pc->pp_level)
+      && vbopen->GetPpLevel() == pc->GetPpLevel())
    {
-      LOG_FMT(LBRDEL, " exceeded %zu newlines\n", nl_max);
+      LOG_FMT(LBRDEL, "%s(%d): exceeded %zu newlines\n",
+              __func__, __LINE__, nl_max);
       return(true);
    }
    return(false);
 }
 
 
-static bool can_remove_braces(chunk_t *bopen)
+static bool can_remove_braces(Chunk *bopen)
 {
    LOG_FUNC_ENTRY();
+   LOG_FMT(LBRDEL, "%s(%d): start on line %zu:\n",
+           __func__, __LINE__, bopen->GetOrigLine());
+
    // Cannot remove braces inside a preprocessor
-   if (bopen->flags & PCF_IN_PREPROC)
+   if (bopen->TestFlags(PCF_IN_PREPROC))
    {
       return(false);
    }
-   chunk_t *pc = chunk_get_next_ncnl(bopen, scope_e::PREPROC);
-   if (chunk_is_token(pc, CT_BRACE_CLOSE))
+   Chunk *pc = bopen->GetNextNcNnl(E_Scope::PREPROC);
+
+   if (pc->Is(CT_BRACE_CLOSE))
    {
       // Can't remove empty statement
       return(false);
    }
-   LOG_FMT(LBRDEL, "%s: start on %zu : ", __func__, bopen->orig_line);
+   const size_t level = bopen->GetLevel() + 1;
 
-
-   const size_t level  = bopen->level + 1;
-   const size_t nl_max = cpd.settings[UO_mod_full_brace_nl].u;
-   chunk_t      *prev  = nullptr;
+   log_rule_B("mod_full_brace_nl");
+   const size_t nl_max = options::mod_full_brace_nl();
+   Chunk        *prev  = Chunk::NullChunkPtr;
 
    size_t       semi_count = 0;
    bool         hit_semi   = false;
@@ -330,34 +375,52 @@ static bool can_remove_braces(chunk_t *bopen)
    size_t       if_count   = 0;
    int          br_count   = 0;
 
-   pc = chunk_get_next_nc(bopen, scope_e::ALL);
-   while (pc != nullptr && pc->level >= level)
+   pc = bopen->GetNextNc(E_Scope::ALL);
+   LOG_FMT(LBRDEL, "%s(%d):  - begin with token '%s', orig line is %zu, orig col is %zu\n",
+           __func__, __LINE__, pc->Text(), pc->GetOrigLine(), pc->GetOrigCol());
+
+   while (  pc->IsNotNullChunk()
+         && pc->GetLevel() >= level)
    {
-      if (pc->flags & PCF_IN_PREPROC)
+      LOG_FMT(LBRDEL, "%s(%d): test token '%s', orig line is %zu, orig col is %zu\n",
+              __func__, __LINE__, pc->Text(), pc->GetOrigLine(), pc->GetOrigCol());
+
+      if (pc->TestFlags(PCF_IN_PREPROC))
       {
          // Cannot remove braces that contain a preprocessor
          return(false);
       }
 
-      if (chunk_is_newline(pc))
+      if (pc->IsNewline())
       {
-         nl_count += pc->nl_count;
-         if (nl_max > 0 && nl_count > nl_max)
+         nl_count += pc->GetNlCount();
+
+         if (  nl_max > 0
+            && nl_count > nl_max)
          {
-            LOG_FMT(LBRDEL, " exceeded %zu newlines\n", nl_max);
+            LOG_FMT(LBRDEL, "%s(%d):  exceeded %zu newlines\n",
+                    __func__, __LINE__, nl_max);
             return(false);
          }
       }
       else
       {
-         if (pc->type == CT_BRACE_OPEN)
+         if (pc->Is(CT_BRACE_OPEN))
          {
             br_count++;
          }
-         else if (pc->type == CT_BRACE_CLOSE)
+         else if (pc->Is(CT_BRACE_CLOSE))
          {
+            if (br_count == 0)
+            {
+               fprintf(stderr, "%s(%d): br_count is ZERO, cannot be decremented, at line %zu, column %zu\n",
+                       __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol());
+               log_flush(true);
+               exit(EX_SOFTWARE);
+            }
             br_count--;
-            if (pc->level == level)
+
+            if (pc->GetLevel() == level)
             {
                // mean a statement in a braces { stmt; }
                // as a statement with a semicolon { stmt; };
@@ -365,401 +428,533 @@ static bool can_remove_braces(chunk_t *bopen)
                hit_semi = true;
             }
          }
-         else if (  (pc->type == CT_IF || pc->type == CT_ELSEIF)
+         else if (  (  pc->Is(CT_IF)
+                    || pc->Is(CT_ELSEIF))
                  && br_count == 0)
          {
             if_count++;
          }
 
-         if (pc->level == level)
+         if (pc->GetLevel() == level)
          {
-            if (semi_count > 0 && hit_semi)
+            if (  semi_count > 0
+               && hit_semi)
             {
                // should have bailed due to close brace level drop
-               LOG_FMT(LBRDEL, " no close brace\n");
+               LOG_FMT(LBRDEL, "%s(%d):  no close brace\n", __func__, __LINE__);
+               return(false);
+            }
+            LOG_FMT(LBRDEL, "%s(%d): Text() '%s', orig line is %zu, semi_count is %zu\n",
+                    __func__, __LINE__, pc->Text(), pc->GetOrigLine(), semi_count);
+
+            if (pc->Is(CT_ELSE))
+            {
+               LOG_FMT(LBRDEL, "%s(%d):  bailed on '%s' on line %zu\n",
+                       __func__, __LINE__, pc->Text(), pc->GetOrigLine());
                return(false);
             }
 
-            LOG_FMT(LBRDEL, " [%s %zu-%zu]", pc->text(), pc->orig_line, semi_count);
-
-            if (pc->type == CT_ELSE)
+            if (  pc->IsSemicolon()
+               || pc->Is(CT_IF)
+               || pc->Is(CT_ELSEIF)
+               || pc->Is(CT_FOR)
+               || pc->Is(CT_DO)
+               || pc->Is(CT_WHILE)
+               || pc->Is(CT_USING_STMT)
+               || (  pc->Is(CT_BRACE_OPEN)
+                  && prev->Is(CT_FPAREN_CLOSE)))
             {
-               LOG_FMT(LBRDEL, " bailed on %s on line %zu\n",
-                       pc->text(), pc->orig_line);
-               return(false);
-            }
+               hit_semi |= pc->IsSemicolon();
 
-            if (  chunk_is_semicolon(pc)
-               || pc->type == CT_IF
-               || pc->type == CT_ELSEIF
-               || pc->type == CT_FOR
-               || pc->type == CT_DO
-               || pc->type == CT_WHILE
-               || pc->type == CT_USING_STMT
-               || (  pc->type == CT_BRACE_OPEN
-                  && chunk_is_token(prev, CT_FPAREN_CLOSE)))
-            {
-               hit_semi |= chunk_is_semicolon(pc);
                if (++semi_count > 1)
                {
-                  LOG_FMT(LBRDEL, " bailed on %zu because of %s on line %zu\n",
-                          bopen->orig_line, pc->text(), pc->orig_line);
+                  LOG_FMT(LBRDEL, "%s(%d):  bailed on %zu because of '%s' on line %zu\n",
+                          __func__, __LINE__, bopen->GetOrigLine(), pc->Text(), pc->GetOrigLine());
                   return(false);
                }
             }
          }
       }
       prev = pc;
-      pc   = chunk_get_next_nc(pc);
+      pc   = pc->GetNextNc();
    }
 
-   if (pc == nullptr)
+   if (pc->IsNullChunk())
    {
-      LOG_FMT(LBRDEL, " NULL\n");
+      LOG_FMT(LBRDEL, "%s(%d):  pc is null chunk\n", __func__, __LINE__);
       return(false);
    }
 
-   if (pc->type == CT_BRACE_CLOSE && pc->parent_type == CT_IF)
+   if (  pc->Is(CT_BRACE_CLOSE)
+      && pc->GetParentType() == CT_IF)
    {
-      chunk_t *next     = chunk_get_next_ncnl(pc, scope_e::PREPROC);
-      chunk_t *tmp_prev = chunk_get_prev_ncnl(pc, scope_e::PREPROC);
+      Chunk *next     = pc->GetNextNcNnl(E_Scope::PREPROC);
+      Chunk *tmp_prev = pc->GetPrevNcNnl(E_Scope::PREPROC);
 
-      if (  chunk_is_token(next, CT_ELSE)
-         && (tmp_prev->type == CT_BRACE_CLOSE || tmp_prev->type == CT_VBRACE_CLOSE)
-         && tmp_prev->parent_type == CT_IF)
+      if (  next->Is(CT_ELSE)
+         && tmp_prev->IsBraceClose()
+         && tmp_prev->GetParentType() == CT_IF)
       {
-         LOG_FMT(LBRDEL, " - bailed on '%s'[%s] on line %zu due to 'if' and 'else' sequence\n",
-                 get_token_name(pc->type), get_token_name(pc->parent_type),
-                 pc->orig_line);
+         LOG_FMT(LBRDEL, "%s(%d):  - bailed on '%s'[%s] on line %zu due to 'if' and 'else' sequence\n",
+                 __func__, __LINE__, get_token_name(pc->GetType()), get_token_name(pc->GetParentType()),
+                 pc->GetOrigLine());
          return(false);
       }
    }
+   LOG_FMT(LBRDEL, "%s(%d):  - end on '%s' on line %zu. if_count is %zu semi_count is %zu\n",
+           __func__, __LINE__, get_token_name(pc->GetType()), pc->GetOrigLine(), if_count, semi_count);
 
-   LOG_FMT(LBRDEL, " - end on '%s' on line %zu. if_count=%zu semi_count=%zu\n",
-           get_token_name(pc->type), pc->orig_line, if_count, semi_count);
-
-   return(pc->type == CT_BRACE_CLOSE && pc->pp_level == bopen->pp_level);
+   return(  pc->Is(CT_BRACE_CLOSE)
+         && pc->GetPpLevel() == bopen->GetPpLevel());
 } // can_remove_braces
 
 
-static void examine_brace(chunk_t *bopen)
+static void examine_brace(Chunk *bopen)
 {
    LOG_FUNC_ENTRY();
-   LOG_FMT(LBRDEL, "%s: start on %zu : ", __func__, bopen->orig_line);
+   LOG_FMT(LBRDEL, "%s(%d): start on orig line %zu, bopen->GetLevel() is %zu\n",
+           __func__, __LINE__, bopen->GetOrigLine(), bopen->GetLevel());
 
-   const size_t level  = bopen->level + 1;
-   const size_t nl_max = cpd.settings[UO_mod_full_brace_nl].u;
+   const size_t level = bopen->GetLevel() + 1;
 
-   chunk_t      *prev      = nullptr;
+   log_rule_B("mod_full_brace_nl");
+   const size_t nl_max = options::mod_full_brace_nl();
+
+   Chunk        *prev      = Chunk::NullChunkPtr;
    size_t       semi_count = 0;
    bool         hit_semi   = false;
    size_t       nl_count   = 0;
    size_t       if_count   = 0;
    int          br_count   = 0;
 
-   chunk_t      *pc = chunk_get_next_nc(bopen);
-   while (pc != nullptr && pc->level >= level)
+   Chunk        *pc = bopen->GetNextNc();
+
+   while (  pc->IsNotNullChunk()
+         && pc->GetLevel() >= level)
    {
-      if (pc->flags & PCF_IN_PREPROC)
+      if (pc->Is(CT_NEWLINE))
+      {
+         LOG_FMT(LBRDEL, "%s(%d): orig line is %zu, orig col is %zu, <Newline>\n",
+                 __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol());
+      }
+      else
+      {
+         LOG_FMT(LBRDEL, "%s(%d): orig line is %zu, orig col is %zu, Text() '%s'\n",
+                 __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol(), pc->Text());
+      }
+
+      if (pc->TestFlags(PCF_IN_PREPROC))
       {
          // Cannot remove braces that contain a preprocessor
-         LOG_FMT(LBRDEL, " PREPROC\n");
+         LOG_FMT(LBRDEL, "%s(%d):  PREPROC\n", __func__, __LINE__);
          return;
       }
 
-      if (chunk_is_newline(pc))
+      if (pc->IsNewline())
       {
-         nl_count += pc->nl_count;
-         if (nl_max > 0 && nl_count > nl_max)
+         nl_count += pc->GetNlCount();
+
+         if (  nl_max > 0
+            && nl_count > nl_max)
          {
-            LOG_FMT(LBRDEL, " exceeded %zu newlines\n", nl_max);
+            LOG_FMT(LBRDEL, "%s(%d):  exceeded %zu newlines\n",
+                    __func__, __LINE__, nl_max);
             return;
          }
       }
       else
       {
-         if (pc->type == CT_BRACE_OPEN)
+         LOG_FMT(LBRDEL, "%s(%d): for pc->Text() '%s', pc->GetLevel() is %zu,  bopen->GetLevel() is %zu\n",
+                 __func__, __LINE__, pc->Text(), pc->GetLevel(), bopen->GetLevel());
+
+         if (  pc->Is(CT_BRACE_OPEN)
+            && pc->GetLevel() == bopen->GetLevel())
          {
             br_count++;
+            LOG_FMT(LBRDEL, "%s(%d): br_count is now %d, pc->GetLevel() is %zu,  bopen->GetLevel() is %zu\n",
+                    __func__, __LINE__, br_count, pc->GetLevel(), bopen->GetLevel());
          }
-         else if (pc->type == CT_BRACE_CLOSE)
+         else if (  pc->Is(CT_BRACE_CLOSE)
+                 && pc->GetLevel() == bopen->GetLevel())
          {
-            br_count--;
             if (br_count == 0)
             {
-               chunk_t *next = chunk_get_next_ncnl(pc, scope_e::PREPROC);
-               if (next == nullptr || next->type != CT_BRACE_CLOSE)
+               fprintf(stderr, "%s(%d): br_count is ZERO, cannot be decremented, at line %zu, column %zu\n",
+                       __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol());
+               log_flush(true);
+               exit(EX_SOFTWARE);
+            }
+            br_count--;
+            LOG_FMT(LBRDEL, "%s(%d): br_count is now %d, pc->GetLevel() is %zu,  bopen->GetLevel() is %zu\n",
+                    __func__, __LINE__, br_count, pc->GetLevel(), bopen->GetLevel());
+
+            if (br_count == 0)
+            {
+               Chunk *next = pc->GetNextNcNnl(E_Scope::PREPROC);
+
+               if (  next->IsNullChunk()
+                  || next->IsNot(CT_BRACE_CLOSE))
                {
-                  LOG_FMT(LBRDEL, " junk after close brace\n");
+                  LOG_FMT(LBRDEL, "%s(%d):  junk after close brace\n", __func__, __LINE__);
                   return;
                }
             }
          }
-         else if (  (pc->type == CT_IF || pc->type == CT_ELSEIF)
+         else if (  (  pc->Is(CT_IF)
+                    || pc->Is(CT_ELSEIF))
                  && br_count == 0)
          {
             if_count++;
          }
+         LOG_FMT(LBRDEL, "%s(%d): pc->GetLevel() is %zu, level is %zu\n",
+                 __func__, __LINE__, pc->GetLevel(), level);
 
-         if (pc->level == level)
+         if (pc->GetLevel() == level)
          {
-            if (semi_count > 0 && hit_semi)
+            if (  semi_count > 0
+               && hit_semi)
             {
                // should have bailed due to close brace level drop
-               LOG_FMT(LBRDEL, " no close brace\n");
+               LOG_FMT(LBRDEL, "%s(%d):  no close brace\n", __func__, __LINE__);
+               return;
+            }
+            LOG_FMT(LBRDEL, "%s(%d): Text() '%s', orig line is %zu, semi_count is %zu\n",
+                    __func__, __LINE__, pc->Text(), pc->GetOrigLine(), semi_count);
+
+            if (pc->Is(CT_ELSE))
+            {
+               LOG_FMT(LBRDEL, "%s(%d):  bailed on '%s' on line %zu\n",
+                       __func__, __LINE__, pc->Text(), pc->GetOrigLine());
                return;
             }
 
-            LOG_FMT(LBRDEL, " [%s %zu-%zu]", pc->text(), pc->orig_line, semi_count);
-
-            if (pc->type == CT_ELSE)
+            if (prev->IsNotNullChunk())
             {
-               LOG_FMT(LBRDEL, " bailed on %s on line %zu\n",
-                       pc->text(), pc->orig_line);
-               return;
+               LOG_FMT(LBRDEL, "%s(%d): orig line is %zu, orig col is %zu, Text() '%s', prev->Text '%s', prev->GetType() %s\n",
+                       __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol(), pc->Text(), prev->Text(), get_token_name(prev->GetType()));
             }
-
-            if (  chunk_is_semicolon(pc)
-               || pc->type == CT_IF
-               || pc->type == CT_ELSEIF
-               || pc->type == CT_FOR
-               || pc->type == CT_DO
-               || pc->type == CT_WHILE
-               || pc->type == CT_SWITCH
-               || pc->type == CT_USING_STMT
-               || (  pc->type == CT_BRACE_OPEN
-                  && chunk_is_token(prev, CT_FPAREN_CLOSE)))
+            else
             {
-               hit_semi |= chunk_is_semicolon(pc);
-               if (++semi_count > 1)
+               LOG_FMT(LBRDEL, "%s(%d): orig line is %zu, orig col is %zu, Text() '%s', prev is a null chunk\n",
+                       __func__, __LINE__, pc->GetOrigLine(), pc->GetOrigCol(), pc->Text());
+            }
+            LOG_FMT(LBRDEL, "%s(%d): for pc->Text() '%s', pc->GetLevel() is %zu,  bopen->GetLevel() is %zu\n",
+                    __func__, __LINE__, pc->Text(), pc->GetLevel(), bopen->GetLevel());
+
+            if (  pc->IsSemicolon()
+               || pc->Is(CT_IF)
+               || pc->Is(CT_ELSEIF)
+               || pc->Is(CT_FOR)
+               || pc->Is(CT_DO)
+               || pc->Is(CT_WHILE)
+               || pc->Is(CT_SWITCH)
+               || pc->Is(CT_USING_STMT)
+               || (  pc->Is(CT_BRACE_OPEN)
+                  && pc->GetLevel() == bopen->GetLevel())) // Issue #1758
+            {
+               LOG_FMT(LBRDEL, "%s(%d): pc->Text() '%s', orig line is %zu, orig col is %zu, level is %zu\n",
+                       __func__, __LINE__, pc->Text(), pc->GetOrigLine(), pc->GetOrigCol(), pc->GetLevel());
+               hit_semi |= pc->IsSemicolon();
+               semi_count++;
+               LOG_FMT(LBRDEL, "%s(%d): semi_count is %zu\n",
+                       __func__, __LINE__, semi_count);
+
+               if (semi_count > 1)
                {
-                  LOG_FMT(LBRDEL, " bailed on %zu because of %s on line %zu\n",
-                          bopen->orig_line, pc->text(), pc->orig_line);
+                  LOG_FMT(LBRDEL, "%s(%d):  bailed on %zu because of '%s' on line %zu\n",
+                          __func__, __LINE__, bopen->GetOrigLine(), pc->Text(), pc->GetOrigLine());
                   return;
                }
             }
          }
       }
       prev = pc;
-      pc   = chunk_get_next_nc(pc);
+      pc   = pc->GetNext();                  // Issue #1907
    }
 
-   if (pc == nullptr)
+   if (pc->IsNullChunk())
    {
-      LOG_FMT(LBRDEL, " NULL\n");
+      LOG_FMT(LBRDEL, "%s(%d): pc is a null chunk\n", __func__, __LINE__);
       return;
    }
+   LOG_FMT(LBRDEL, "%s(%d):  - end on '%s' on line %zu. if_count is %zu, semi_count is %zu\n",
+           __func__, __LINE__, get_token_name(pc->GetType()), pc->GetOrigLine(), if_count, semi_count);
 
-   LOG_FMT(LBRDEL, " - end on '%s' on line %zu. if_count=%zu semi_count=%zu\n",
-           get_token_name(pc->type), pc->orig_line, if_count, semi_count);
-
-   if (pc->type == CT_BRACE_CLOSE)
+   if (pc->Is(CT_BRACE_CLOSE))
    {
-      chunk_t *next = chunk_get_next_ncnl(pc);
-      if (next != nullptr)
+      Chunk *next = pc->GetNextNcNnl();
+
+      if (next->IsNotNullChunk())
       {
-         while (chunk_is_token(next, CT_VBRACE_CLOSE))
+         while (next->Is(CT_VBRACE_CLOSE))
          {
-            next = chunk_get_next_ncnl(next);
+            next = next->GetNextNcNnl();
          }
 
-         if (next != nullptr)
+         if (next->IsNotNullChunk())
          {
-            LOG_FMT(LBRDEL, " next is '%s'\n", get_token_name(next->type));
+            LOG_FMT(LBRDEL, "%s(%d): orig line is %zu, orig col is %zu, next is '%s'\n",
+                    __func__, __LINE__, next->GetOrigLine(), next->GetOrigCol(), get_token_name(next->GetType()));
          }
+
          if (  if_count > 0
-            && next != nullptr
-            && (next->type == CT_ELSE || next->type == CT_ELSEIF))
+            && (  next->Is(CT_ELSE)
+               || next->Is(CT_ELSEIF)))
          {
-            LOG_FMT(LBRDEL, " bailed on because 'else' is next and %zu ifs\n", if_count);
+            LOG_FMT(LBRDEL, "%s(%d):  bailed on because 'else' is next and %zu ifs\n",
+                    __func__, __LINE__, if_count);
             return;
          }
       }
+      LOG_FMT(LBRDEL, "%s(%d): semi_count is %zu\n",
+              __func__, __LINE__, semi_count);
 
       if (semi_count > 0)
       {
-         if (bopen->parent_type == CT_ELSE)
-         {
-            chunk_t *tmp_next = chunk_get_next_ncnl(bopen);
-            if (tmp_next->type == CT_IF)
-            {
-               chunk_t *tmp_prev = chunk_get_prev_ncnl(bopen);
-               LOG_FMT(LBRDEL, " else-if removing braces on line %zu and %zu\n",
-                       bopen->orig_line, pc->orig_line);
+         LOG_FMT(LBRDEL, "%s(%d): bopen->GetParentType() is %s\n",
+                 __func__, __LINE__, get_token_name(bopen->GetParentType()));
 
-               chunk_del(bopen);
-               chunk_del(pc);
+         if (bopen->GetParentType() == CT_ELSE)
+         {
+            Chunk *tmp_next = bopen->GetNextNcNnl();
+
+            if (tmp_next->Is(CT_IF))
+            {
+               Chunk *tmp_prev = bopen->GetPrevNcNnl();
+               LOG_FMT(LBRDEL, "%s(%d):  else-if removing braces on line %zu and %zu\n",
+                       __func__, __LINE__, bopen->GetOrigLine(), pc->GetOrigLine());
+
+               Chunk::Delete(bopen);
+               Chunk::Delete(pc);
                newline_del_between(tmp_prev, tmp_next);
-               if (cpd.settings[UO_nl_else_if].a & AV_ADD)
+
+               log_rule_B("nl_else_if");
+
+               if (options::nl_else_if() & IARF_ADD)
                {
                   newline_add_between(tmp_prev, tmp_next);
                }
                return;
             }
          }
-
          // we have a pair of braces with only 1 statement inside
+         LOG_FMT(LBRDEL, "%s(%d): we have a pair of braces with only 1 statement inside\n",
+                 __func__, __LINE__);
+         LOG_FMT(LBRDEL, "%s(%d): removing braces on line %zu and %zu\n",
+                 __func__, __LINE__, bopen->GetOrigLine(), pc->GetOrigLine());
          convert_brace(bopen);
          convert_brace(pc);
-
-         LOG_FMT(LBRDEL, " removing braces on line %zu and %zu\n",
-                 bopen->orig_line, pc->orig_line);
       }
       else
       {
-         LOG_FMT(LBRDEL, " empty statement\n");
+         LOG_FMT(LBRDEL, "%s(%d):  empty statement\n", __func__, __LINE__);
       }
    }
    else
    {
-      LOG_FMT(LBRDEL, " not a close brace? - '%s'\n", pc->text());
+      LOG_FMT(LBRDEL, "%s(%d):  not a close brace? - '%s'\n",
+              __func__, __LINE__, pc->Text());
    }
 } // examine_brace
 
 
-static void convert_brace(chunk_t *br)
+static void convert_brace(Chunk *br)
 {
    LOG_FUNC_ENTRY();
-   if (!br || (br->flags & PCF_KEEP_BRACE))
+
+   if (br->TestFlags(PCF_KEEP_BRACE))
    {
       return;
    }
+   Chunk *tmp;
 
-   chunk_t *tmp;
-   if (br->type == CT_BRACE_OPEN)
+   if (br->Is(CT_BRACE_OPEN))
    {
-      set_chunk_type(br, CT_VBRACE_OPEN);
-      br->str.clear();
-      tmp = chunk_get_prev(br);
+      br->SetType(CT_VBRACE_OPEN);
+      br->Str().clear();
+      tmp = br->GetPrev();
+
+      if (tmp->IsNullChunk())
+      {
+         return;
+      }
    }
-   else if (br->type == CT_BRACE_CLOSE)
+   else if (br->Is(CT_BRACE_CLOSE))
    {
-      set_chunk_type(br, CT_VBRACE_CLOSE);
-      br->str.clear();
-      tmp = chunk_get_next(br);
+      br->SetType(CT_VBRACE_CLOSE);
+      br->Str().clear();
+      tmp = br->GetNext();
+
+      if (tmp->IsNullChunk())
+      {
+         return;
+      }
    }
    else
    {
       return;
    }
 
-   if (chunk_is_newline(tmp))
+   if (tmp->IsNewline())
    {
-      if (tmp->nl_count > 1)
+      if (tmp->GetNlCount() > 1)
       {
-         tmp->nl_count--;
+         if (!br->TestFlags(PCF_ONE_LINER)) // Issue #2232
+         {
+            tmp->SetNlCount(tmp->GetNlCount() - 1);
+            LOG_FMT(LBRDEL, "%s(%d): tmp new line count is %zu\n",
+                    __func__, __LINE__, tmp->GetNlCount());
+         }
       }
-      else if (chunk_safe_to_del_nl(tmp))
+      else
       {
-         chunk_del(tmp);
+         // Issue #2219
+         // look for opening brace
+         Chunk *brace = Chunk::NullChunkPtr;
+
+         if (br->Is(CT_VBRACE_OPEN))
+         {
+            brace = tmp;
+         }
+         else if (br->Is(CT_VBRACE_CLOSE))
+         {
+            brace = br->GetOpeningParen();
+
+            if (brace->IsNullChunk())
+            {
+               brace = br->GetPrevType(CT_BRACE_OPEN, br->GetLevel());
+            }
+         }
+
+         if (  br->Is(CT_VBRACE_OPEN)
+            || (  br->Is(CT_VBRACE_CLOSE)
+               && brace->GetOrigLine() < tmp->GetOrigLine()))
+         {
+            if (tmp->SafeToDeleteNl())
+            {
+               Chunk::Delete(tmp);
+            }
+         }
       }
    }
 } // convert_brace
 
 
-static void convert_vbrace(chunk_t *vbr)
+static void convert_vbrace(Chunk *vbr)
 {
    LOG_FUNC_ENTRY();
-   if (vbr == nullptr)
-   {
-      return;
-   }
 
-   if (vbr->type == CT_VBRACE_OPEN)
+   if (vbr->Is(CT_VBRACE_OPEN))
    {
-      set_chunk_type(vbr, CT_BRACE_OPEN);
-      vbr->str = "{";
+      vbr->SetType(CT_BRACE_OPEN);
+      vbr->Str() = "{";
 
       /*
        * If the next chunk is a preprocessor, then move the open brace after the
        * preprocessor.
        */
-      chunk_t *tmp = chunk_get_next(vbr);
-      if (chunk_is_token(tmp, CT_PREPROC))
+      Chunk *tmp = vbr->GetNext();
+
+      if (tmp->Is(CT_PREPROC))
       {
-         tmp = chunk_get_next(vbr, scope_e::PREPROC);
-         chunk_move_after(vbr, tmp);
+         tmp = vbr->GetNext(E_Scope::PREPROC);
+         vbr->MoveAfter(tmp);
          newline_add_after(vbr);
       }
    }
-   else if (vbr->type == CT_VBRACE_CLOSE)
+   else if (vbr->Is(CT_VBRACE_CLOSE))
    {
-      set_chunk_type(vbr, CT_BRACE_CLOSE);
-      vbr->str = "}";
+      vbr->SetType(CT_BRACE_CLOSE);
+      vbr->Str() = "}";
 
       /*
        * If the next chunk is a comment, followed by a newline, then
        * move the brace after the newline and add another newline after
-       * the close brace.
+       * the close brace, unless we're keeping a one-liner.
        */
-      chunk_t *tmp = chunk_get_next(vbr);
-      if (chunk_is_comment(tmp))
+      Chunk *tmp = vbr->GetNext();
+
+      if (  tmp->IsComment()
+         && (  !vbr->TestFlags(PCF_ONE_LINER)
+            || !options::nl_if_leave_one_liners()))
       {
-         tmp = chunk_get_next(tmp);
-         if (chunk_is_newline(tmp))
+         tmp = tmp->GetNext();
+
+         if (tmp->IsNewline())
          {
-            chunk_move_after(vbr, tmp);
+            vbr->MoveAfter(tmp);
             newline_add_after(vbr);
          }
       }
    }
-}
+} // convert_vbrace
 
 
-static void convert_vbrace_to_brace(void)
+static void convert_vbrace_to_brace()
 {
    LOG_FUNC_ENTRY();
 
    // Find every vbrace open
-   for (chunk_t *pc = chunk_get_head(); pc != nullptr; pc = chunk_get_next_ncnl(pc))
+   log_rule_B("mod_full_brace_if");
+   log_rule_B("mod_full_brace_if_chain");
+   log_rule_B("mod_full_brace_for");
+   log_rule_B("mod_full_brace_do");
+   log_rule_B("mod_full_brace_while");
+   log_rule_B("mod_full_brace_using");
+   log_rule_B("mod_full_brace_function");
+
+   for (Chunk *pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNextNcNnl())
    {
-      if (pc->type != CT_VBRACE_OPEN)
+      if (pc->IsNot(CT_VBRACE_OPEN))
       {
          continue;
       }
+      auto const in_preproc = pc->TestFlags(PCF_IN_PREPROC);
 
-      bool in_preproc = (pc->flags & PCF_IN_PREPROC);
-
-      if (  (  (  pc->parent_type == CT_IF
-               || pc->parent_type == CT_ELSE
-               || pc->parent_type == CT_ELSEIF)
-            && (cpd.settings[UO_mod_full_brace_if].a & AV_ADD)
-            && !cpd.settings[UO_mod_full_brace_if_chain].b)
-         || (  pc->parent_type == CT_FOR
-            && (cpd.settings[UO_mod_full_brace_for].a & AV_ADD))
-         || (  pc->parent_type == CT_DO
-            && (cpd.settings[UO_mod_full_brace_do].a & AV_ADD))
-         || (  pc->parent_type == CT_WHILE
-            && (cpd.settings[UO_mod_full_brace_while].a & AV_ADD))
-         || (  pc->parent_type == CT_USING_STMT
-            && (cpd.settings[UO_mod_full_brace_using].a & AV_ADD))
-         || (  pc->parent_type == CT_FUNC_DEF
-            && (cpd.settings[UO_mod_full_brace_function].a & AV_ADD)))
+      if (  (  (  pc->GetParentType() == CT_IF
+               || pc->GetParentType() == CT_ELSE
+               || pc->GetParentType() == CT_ELSEIF)
+            && (options::mod_full_brace_if() & IARF_ADD)
+            && !options::mod_full_brace_if_chain())
+         || (  pc->GetParentType() == CT_FOR
+            && (options::mod_full_brace_for() & IARF_ADD))
+         || (  pc->GetParentType() == CT_DO
+            && (options::mod_full_brace_do() & IARF_ADD))
+         || (  pc->GetParentType() == CT_WHILE
+            && (options::mod_full_brace_while() & IARF_ADD))
+         || (  pc->GetParentType() == CT_USING_STMT
+            && (options::mod_full_brace_using() & IARF_ADD))
+         || (  pc->GetParentType() == CT_FUNC_DEF
+            && (options::mod_full_brace_function() & IARF_ADD)))
       {
          // Find the matching vbrace close
-         chunk_t *vbc = nullptr;
-         chunk_t *tmp = pc;
-         while ((tmp = chunk_get_next(tmp)) != nullptr)
+         Chunk *vbc = Chunk::NullChunkPtr;
+         Chunk *tmp = pc->GetNext();
+
+         while (tmp->IsNotNullChunk())
          {
-            if (in_preproc && ((tmp->flags & PCF_IN_PREPROC) == 0))
+            if (  in_preproc
+               && !tmp->TestFlags(PCF_IN_PREPROC))
             {
                // Can't leave a preprocessor
                break;
             }
-            if (  pc->brace_level == tmp->brace_level
-               && tmp->type == CT_VBRACE_CLOSE
-               && pc->parent_type == tmp->parent_type
-               && ((tmp->flags & PCF_IN_PREPROC) == (pc->flags & PCF_IN_PREPROC)))
+
+            if (  pc->GetBraceLevel() == tmp->GetBraceLevel()
+               && tmp->Is(CT_VBRACE_CLOSE)
+               && pc->GetParentType() == tmp->GetParentType()
+               && ((tmp->GetFlags() & PCF_IN_PREPROC) == (pc->GetFlags() & PCF_IN_PREPROC)))
             {
                vbc = tmp;
                break;
             }
+            tmp = tmp->GetNext();
          }
-         if (vbc == nullptr)
+
+         if (vbc->IsNullChunk())
          {
             continue;
          }
-
          // if we found a corresponding virtual closing brace
          convert_vbrace(pc);   // convert both the opening
          convert_vbrace(vbc);  // and closing brace
@@ -768,421 +963,587 @@ static void convert_vbrace_to_brace(void)
 } // convert_vbrace_to_brace
 
 
-chunk_t *insert_comment_after(chunk_t *ref, c_token_t cmt_type,
-                              const unc_text &cmt_text)
+Chunk *insert_comment_after(Chunk *ref, E_Token cmt_type,
+                            const UncText &cmt_text)
 {
    LOG_FUNC_ENTRY();
 
-   chunk_t new_cmt = *ref;
-   new_cmt.prev  = nullptr;
-   new_cmt.next  = nullptr;
-   new_cmt.flags = (ref->flags & PCF_COPY_FLAGS);
-   new_cmt.type  = cmt_type;
-   new_cmt.str.clear();
+   Chunk new_cmt = *ref;
+
+   new_cmt.SetFlags(ref->GetFlags() & PCF_COPY_FLAGS);
+   new_cmt.SetType(cmt_type);
+   new_cmt.Str().clear();
+
    if (cmt_type == CT_COMMENT_CPP)
    {
-      new_cmt.str.append("// ");
-      new_cmt.str.append(cmt_text);
+      new_cmt.Str().append("// ");
+      new_cmt.Str().append(cmt_text);
    }
    else
    {
-      if (ref->type == CT_PP_ELSE)
+      if (ref->Is(CT_PP_ELSE))
       {  // make test c/ 02501 stable
-         new_cmt.str.append(" ");
+         new_cmt.Str().append(" ");
       }
-      new_cmt.str.append("/* ");
-      new_cmt.str.append(cmt_text);
-      new_cmt.str.append(" */");
+      new_cmt.Str().append("/* ");
+      new_cmt.Str().append(cmt_text);
+      new_cmt.Str().append(" */");
    }
    // TODO: expand comment type to cover other comment styles?
 
-   new_cmt.column   = ref->column + ref->len() + 1;
-   new_cmt.orig_col = new_cmt.column;
+   new_cmt.SetColumn(ref->GetColumn() + ref->Len() + 1);
+   new_cmt.SetOrigCol(new_cmt.GetColumn());
 
-   return(chunk_add_after(&new_cmt, ref));
+   return(new_cmt.CopyAndAddAfter(ref));
 }
 
 
-static void append_tag_name(unc_text &txt, chunk_t *pc)
+static void append_tag_name(UncText &txt, Chunk *pc)
 {
    LOG_FUNC_ENTRY();
-   chunk_t *cur = pc;
+   Chunk *tmp = pc->GetPrevNcNnl();
+
+   LOG_FMT(LMCB, "%s(%d): txt is '%s'\n",
+           __func__, __LINE__, txt.c_str());
 
    // step backwards over all a::b stuff
-   for (chunk_t *tmp = chunk_get_prev_ncnl(pc)
-        ; (  tmp != nullptr
-          && (tmp->type == CT_DC_MEMBER || tmp->type == CT_MEMBER))
-        ; tmp = chunk_get_prev_ncnl(tmp))
+   while (tmp->IsNotNullChunk())
    {
-      tmp = chunk_get_prev_ncnl(tmp);
-      cur = tmp;
+      if (  tmp->IsNot(CT_DC_MEMBER)
+         && tmp->IsNot(CT_MEMBER))
+      {
+         break;
+      }
+      tmp = tmp->GetPrevNcNnl();
+      pc  = tmp;
 
-      if (!chunk_is_word(tmp))
+      if (!tmp->IsWord())
       {
          break;
       }
    }
+   txt += pc->GetStr();
+   LOG_FMT(LMCB, "%s(%d): txt is '%s'\n",
+           __func__, __LINE__, txt.c_str());
 
-   if (cur == nullptr)
+   pc = pc->GetNextNcNnl();
+
+   while (pc->IsNotNullChunk())
    {
-      return;
-   }
-
-   txt += cur->str;
-   cur  = chunk_get_next_ncnl(cur);
-
-   for (chunk_t *tmp = cur, *tmp_next = chunk_get_next_ncnl(cur)
-        ; (  tmp != nullptr
-          && (tmp->type == CT_DC_MEMBER || tmp->type == CT_MEMBER))
-        ; tmp = chunk_get_next_ncnl(tmp), tmp_next = chunk_get_next_ncnl(tmp))
-   {
-      txt += tmp->str;
-
-      if (tmp_next == nullptr)
+      if (  pc->IsNot(CT_DC_MEMBER)
+         && pc->IsNot(CT_MEMBER))
       {
          break;
       }
-      txt += tmp_next->str;
+      txt += pc->GetStr();
+      LOG_FMT(LMCB, "%s(%d): txt is '%s'\n",
+              __func__, __LINE__, txt.c_str());
+      pc = pc->GetNextNcNnl();
+
+      if (pc->IsNotNullChunk())
+      {
+         txt += pc->GetStr();
+         LOG_FMT(LMCB, "%s(%d): txt is '%s'\n",
+                 __func__, __LINE__, txt.c_str());
+      }
+      pc = pc->GetNextNcNnl();
    }
 } // append_tag_name
 
 
-void add_long_closebrace_comment(void)
+void add_long_closebrace_comment()
 {
    LOG_FUNC_ENTRY();
-   chunk_t *fcn_pc = nullptr;
-   chunk_t *sw_pc  = nullptr;
-   chunk_t *ns_pc  = nullptr;
-   chunk_t *cl_pc  = nullptr;
+   Chunk *fcn_pc = Chunk::NullChunkPtr;
+   Chunk *sw_pc  = Chunk::NullChunkPtr;
+   Chunk *ns_pc  = Chunk::NullChunkPtr;
+   Chunk *cl_pc  = Chunk::NullChunkPtr;
 
-   for (chunk_t *pc = chunk_get_head(); pc != nullptr; pc = chunk_get_next_ncnl(pc))
+   for (Chunk *pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNextNcNnl())
    {
-      if (pc->type == CT_FUNC_DEF || pc->type == CT_OC_MSG_DECL)
+      if (  pc->Is(CT_FUNC_DEF)
+         || pc->Is(CT_OC_MSG_DECL))
       {
          fcn_pc = pc;
       }
-      else if (pc->type == CT_SWITCH)
+      else if (pc->Is(CT_SWITCH))
       {
          // pointless, since it always has the text "switch"
          sw_pc = pc;
       }
-      else if (pc->type == CT_NAMESPACE)
+      else if (pc->Is(CT_NAMESPACE))
       {
          ns_pc = pc;
       }
-      else if (pc->type == CT_CLASS)
+      else if (pc->Is(CT_CLASS))
       {
          cl_pc = pc;
       }
 
-      if (pc->type != CT_BRACE_OPEN || (pc->flags & PCF_IN_PREPROC))
+      if (  pc->IsNot(CT_BRACE_OPEN)
+         || pc->TestFlags(PCF_IN_PREPROC))
       {
          continue;
       }
+      Chunk  *br_open = pc;
+      size_t nl_count = 0;
 
-      chunk_t *br_open = pc;
-      size_t  nl_count = 0;
+      Chunk  *tmp = pc;
 
-      chunk_t *tmp = pc;
-      while ((tmp = chunk_get_next(tmp, scope_e::PREPROC)) != nullptr)
+      while ((tmp = tmp->GetNext(E_Scope::PREPROC))->IsNotNullChunk())
       {
-         if (chunk_is_newline(tmp))
+         if (tmp->IsNewline())
          {
-            nl_count += tmp->nl_count;
+            nl_count += tmp->GetNlCount();
             continue;
          }
-         // handle only matching closing braces, skip other chunks
-         if (tmp->level != br_open->level || tmp->type != CT_BRACE_CLOSE)
-         {
-            continue;
-         }
-         chunk_t *br_close = tmp;
 
-         tmp = chunk_get_next(tmp);
+         // handle only matching closing braces, skip other chunks
+         if (  tmp->GetLevel() != br_open->GetLevel()
+            || tmp->IsNot(CT_BRACE_CLOSE))
+         {
+            continue;
+         }
+         Chunk *br_close = tmp;
+
+         tmp = tmp->GetNext();
 
          // check for a possible end semicolon
-         if (chunk_is_token(tmp, CT_SEMICOLON))
+         if (tmp->Is(CT_SEMICOLON))
          {
             // set br_close to the semi token,
-            // as br_close is used to add the coment after it
+            // as br_close is used to add the comment after it
             br_close = tmp;
-            tmp      = chunk_get_next(tmp);
+            tmp      = tmp->GetNext();
          }
+
          // make sure a newline follows in order to not overwrite an already
          // existring comment
-         if (tmp != nullptr && !chunk_is_newline(tmp))
+         if (  tmp->IsNotNullChunk()
+            && !tmp->IsNewline())
          {
             break;
          }
+         size_t  nl_min  = 0;
+         Chunk   *tag_pc = Chunk::NullChunkPtr;
+         UncText xstr;
 
-         size_t   nl_min  = 0;
-         chunk_t  *tag_pc = nullptr;
-         unc_text xstr;
-
-         if (  br_open->parent_type == CT_FUNC_DEF
-            || br_open->parent_type == CT_OC_MSG_DECL)
+         if (  br_open->GetParentType() == CT_FUNC_DEF
+            || br_open->GetParentType() == CT_OC_MSG_DECL)
          {
-            nl_min = cpd.settings[UO_mod_add_long_function_closebrace_comment].u;
+            log_rule_B("mod_add_long_function_closebrace_comment");
+            nl_min = options::mod_add_long_function_closebrace_comment();
             tag_pc = fcn_pc;
 
-            if (tag_pc != nullptr)
+            if (tag_pc->IsNotNullChunk())
             {
                append_tag_name(xstr, tag_pc);
+               LOG_FMT(LMCB, "%s(%d): xstr is '%s'\n",
+                       __func__, __LINE__, xstr.c_str());
             }
          }
-         else if (br_open->parent_type == CT_SWITCH && sw_pc != nullptr)
+         else if (  br_open->GetParentType() == CT_SWITCH
+                 && sw_pc->IsNotNullChunk())
          {
-            nl_min = cpd.settings[UO_mod_add_long_switch_closebrace_comment].u;
+            log_rule_B("mod_add_long_switch_closebrace_comment");
+            nl_min = options::mod_add_long_switch_closebrace_comment();
             tag_pc = sw_pc;
-            xstr   = sw_pc->str;
+            xstr   = sw_pc->GetStr();
+            LOG_FMT(LMCB, "%s(%d): xstr is '%s'\n",
+                    __func__, __LINE__, xstr.c_str());
          }
-         else if (br_open->parent_type == CT_NAMESPACE && ns_pc != nullptr)
+         else if (  br_open->GetParentType() == CT_NAMESPACE
+                 && ns_pc->IsNotNullChunk())
          {
-            nl_min = cpd.settings[UO_mod_add_long_namespace_closebrace_comment].u;
+            log_rule_B("mod_add_long_namespace_closebrace_comment");
+            nl_min = options::mod_add_long_namespace_closebrace_comment();
             tag_pc = ns_pc;
-            xstr   = tag_pc->str;    // add 'namespace' to the string
+            xstr   = tag_pc->GetStr();    // add 'namespace' to the string
+            LOG_FMT(LMCB, "%s(%d): xstr is '%s'\n",
+                    __func__, __LINE__, xstr.c_str());
 
             // next chunk, normally is going to be the namespace name
             // append it with a space to generate "namespace xyz"
-            chunk_t *tmp_next = chunk_get_next_ncnl(tag_pc);
-            if (  tmp_next != nullptr
-               && tmp_next->type != CT_BRACE_OPEN) // anonymous namespace -> ignore
+            Chunk *tmp_next = tag_pc->GetNextNcNnl();
+
+            if (tmp_next->IsNot(CT_BRACE_OPEN)) // anonymous namespace -> ignore
             {
                xstr.append(" ");
+               LOG_FMT(LMCB, "%s(%d): xstr is '%s'\n",
+                       __func__, __LINE__, xstr.c_str());
                append_tag_name(xstr, tmp_next);
+               LOG_FMT(LMCB, "%s(%d): xstr is '%s'\n",
+                       __func__, __LINE__, xstr.c_str());
             }
          }
-         else if (  br_open->parent_type == CT_CLASS
-                 && cl_pc != nullptr
-                 && (  (cpd.lang_flags & LANG_CPP) == 0   // proceed if not C++
-                    || (br_close->type == CT_SEMICOLON))) // else a C++ class needs to end with a semicolon
+         else if (  br_open->GetParentType() == CT_CLASS
+                 && cl_pc->IsNotNullChunk()
+                 && (  !language_is_set(lang_flag_e::LANG_CPP) // proceed if not C++
+                    || br_close->Is(CT_SEMICOLON)))            // else a C++ class needs to end with a semicolon
          {
-            nl_min = cpd.settings[UO_mod_add_long_class_closebrace_comment].u;
+            log_rule_B("mod_add_long_class_closebrace_comment");
+            nl_min = options::mod_add_long_class_closebrace_comment();
             tag_pc = cl_pc;
-            xstr   = tag_pc->str;
+            xstr   = tag_pc->GetStr();
+            LOG_FMT(LMCB, "%s(%d): xstr is '%s'\n",
+                    __func__, __LINE__, xstr.c_str());
 
-            chunk_t *tmp_next = chunk_get_next(cl_pc);
-            if (tag_pc != nullptr)
+            Chunk *tmp_next = cl_pc->GetNext();
+
+            if (tag_pc->IsNotNullChunk())
             {
                xstr.append(" ");
+               LOG_FMT(LMCB, "%s(%d): xstr is '%s'\n",
+                       __func__, __LINE__, xstr.c_str());
                append_tag_name(xstr, tmp_next);
+               LOG_FMT(LMCB, "%s(%d): xstr is '%s'\n",
+                       __func__, __LINE__, xstr.c_str());
             }
          }
 
          if (  nl_min > 0
             && nl_count >= nl_min
-            && tag_pc != nullptr)
+            && tag_pc->IsNotNullChunk())
          {
-            // use the comment style that fits to the selected language
-            const c_token_t style = (cpd.lang_flags & (LANG_CPP | LANG_CS))
-                                    ? CT_COMMENT_CPP : CT_COMMENT;
+            E_Token style;
 
+            if (options::mod_add_force_c_closebrace_comment())
+            {
+               // force the C comment style
+               style = CT_COMMENT;
+            }
+            else
+            {
+               // use the comment style that fits to the selected language
+               style = (  language_is_set(lang_flag_e::LANG_CPP)
+                       || language_is_set(lang_flag_e::LANG_CS))
+                          ? CT_COMMENT_CPP : CT_COMMENT;
+            }
             // Add a comment after the close brace
+            LOG_FMT(LMCB, "%s(%d): xstr is '%s'\n",
+                    __func__, __LINE__, xstr.c_str());
             insert_comment_after(br_close, style, xstr);
          }
-
          break;
       }
    }
 } // add_long_closebrace_comment
 
 
-static void move_case_break(void)
+static void move_case_break()
 {
    LOG_FUNC_ENTRY();
-   chunk_t *prev = nullptr;
+   Chunk *prev = Chunk::NullChunkPtr;
 
-   for (chunk_t *pc = chunk_get_head(); pc != nullptr; pc = chunk_get_next_ncnl(pc))
+   for (Chunk *pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNextNcNnl())
    {
-      if (  pc->type == CT_BREAK
-         && chunk_is_token(prev, CT_BRACE_CLOSE)
-         && prev->parent_type == CT_CASE
-         && chunk_is_newline(chunk_get_prev(pc))
-         && chunk_is_newline(chunk_get_prev(prev)))
+      if (  pc->Is(CT_BREAK)
+         && prev->Is(CT_BRACE_CLOSE)
+         && prev->GetParentType() == CT_CASE
+         && pc->GetPrev()->IsNewline()
+         && prev->GetPrev()->IsNewline())
       {
-         chunk_swap_lines(prev, pc);
+         prev->SwapLines(pc);
       }
       prev = pc;
    }
 }
 
 
-static chunk_t *mod_case_brace_remove(chunk_t *br_open)
+static void move_case_return()
 {
    LOG_FUNC_ENTRY();
-   LOG_FMT(LMCB, "%s: line %zu", __func__, br_open->orig_line);
+   Chunk *prev = Chunk::NullChunkPtr;
+
+   for (Chunk *pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNextNcNnl())
+   {
+      if (  pc->Is(CT_RETURN)
+         && prev->Is(CT_BRACE_CLOSE)
+         && prev->GetParentType() == CT_CASE
+         && pc->GetPrev()->IsNewline()
+         && prev->GetPrev()->IsNewline())
+      {
+         // Find the end of the return statement
+         while (pc->IsNot(CT_SEMICOLON))
+         {
+            if (  pc->Is(CT_CASE)
+               || pc->Is(CT_BRACE_CLOSE))
+            {
+               // This may indicate a semicolon was missing in the code to format.
+               // Avoid moving the return statement to prevent potential unwanted errors.
+               pc = Chunk::NullChunkPtr;
+               break;
+            }
+            pc = pc->GetNext();
+         }
+         pc = pc->GetNextNl();
+         pc = pc->GetNextNcNnl();
+
+         if (pc->IsNotNullChunk())
+         {
+            // Swap all lines between brace close and current token
+            LOG_FMT(LMCB, "%s(%d): move line %zu before line %zu\n",
+                    __func__, __LINE__, prev->GetOrigLine(), pc->GetOrigLine());
+            Chunk *curr = prev->GetNextNcNnl();
+
+            while (curr != pc)
+            {
+               prev->SwapLines(curr);
+               curr = prev->GetNextNcNnl();
+            }
+         }
+      }
+      prev = pc;
+   }
+} // move_case_return
+
+
+static Chunk *mod_case_brace_remove(Chunk *br_open)
+{
+   LOG_FUNC_ENTRY();
+   LOG_FMT(LMCB, "%s(%d): line %zu",
+           __func__, __LINE__, br_open->GetOrigLine());
 
    // Find the matching brace close
-   chunk_t *next     = chunk_get_next_ncnl(br_open, scope_e::PREPROC);
-   chunk_t *br_close = chunk_get_next_type(br_open, CT_BRACE_CLOSE, br_open->level, scope_e::PREPROC);
-   if (br_close == nullptr)
+   Chunk *next     = br_open->GetNextNcNnl(E_Scope::PREPROC);
+   Chunk *br_close = br_open->GetNextType(CT_BRACE_CLOSE, br_open->GetLevel(), E_Scope::PREPROC);
+
+   if (br_close->IsNullChunk())
    {
-      LOG_FMT(LMCB, " - no close\n");
+      LOG_FMT(LMCB, "%s(%d):  - no close\n", __func__, __LINE__);
       return(next);
    }
-
    // Make sure 'break', 'return', 'goto', 'case' or '}' is after the close brace
-   chunk_t *pc = chunk_get_next_ncnl(br_close, scope_e::PREPROC);
-   if (  pc == nullptr
-      || (  pc->type != CT_BREAK
-         && pc->type != CT_RETURN
-         && pc->type != CT_CASE
-         && pc->type != CT_GOTO
-         && pc->type != CT_BRACE_CLOSE))
+   Chunk *pc = br_close->GetNextNcNnl(E_Scope::PREPROC);
+
+   if (  pc->IsNullChunk()
+      || (  pc->IsNot(CT_BREAK)
+         && pc->IsNot(CT_RETURN)
+         && pc->IsNot(CT_CASE)
+         && pc->IsNot(CT_GOTO)
+         && pc->IsNot(CT_BRACE_CLOSE)))
    {
-      LOG_FMT(LMCB, " - after '%s'\n",
-              (pc == nullptr) ? "<null>" : get_token_name(pc->type));
+      LOG_FMT(LMCB, "%s(%d):  - after '%s'\n",
+              __func__, __LINE__, (pc->IsNullChunk()) ? "null chuck" : get_token_name(pc->GetType()));
       return(next);
    }
 
    // scan to make sure there are no definitions at brace level between braces
-   for (chunk_t *tmp_pc = br_open;
+   for (Chunk *tmp_pc = br_open;
         tmp_pc != br_close;
-        tmp_pc = chunk_get_next_ncnl(tmp_pc, scope_e::PREPROC))
+        tmp_pc = tmp_pc->GetNextNcNnl(E_Scope::PREPROC))
    {
-      if (tmp_pc->level == (br_open->level + 1) && (tmp_pc->flags & PCF_VAR_DEF))
+      if (  tmp_pc->GetLevel() == (br_open->GetLevel() + 1)
+         && tmp_pc->TestFlags(PCF_VAR_DEF))
       {
-         LOG_FMT(LMCB, " - vardef on line %zu: '%s'\n", tmp_pc->orig_line, pc->text());
+         LOG_FMT(LMCB, "%s(%d):  - vardef on line %zu: '%s'\n",
+                 __func__, __LINE__, tmp_pc->GetOrigLine(), pc->Text());
          return(next);
       }
    }
-   LOG_FMT(LMCB, " - removing braces on lines %zu and %zu\n",
-           br_open->orig_line, br_close->orig_line);
 
-   for (chunk_t *tmp_pc = br_open;
+   LOG_FMT(LMCB, "%s(%d):  - removing braces on lines %zu and %zu\n",
+           __func__, __LINE__, br_open->GetOrigLine(), br_close->GetOrigLine());
+
+   for (Chunk *tmp_pc = br_open;
         tmp_pc != br_close;
-        tmp_pc = chunk_get_next_ncnl(tmp_pc, scope_e::PREPROC))
+        tmp_pc = tmp_pc->GetNextNcNnl(E_Scope::PREPROC))
    {
-      tmp_pc->brace_level--;
-      tmp_pc->level--;
+      if (tmp_pc->GetBraceLevel() == 0)
+      {
+         fprintf(stderr, "%s(%d): brace level is ZERO, cannot be decremented, at line %zu, column %zu\n",
+                 __func__, __LINE__, tmp_pc->GetOrigLine(), tmp_pc->GetOrigCol());
+         log_flush(true);
+         exit(EX_SOFTWARE);
+      }
+      tmp_pc->SetBraceLevel(tmp_pc->GetBraceLevel() - 1);
+
+      if (tmp_pc->GetLevel() == 0)
+      {
+         fprintf(stderr, "%s(%d): tmp_pc->GetLevel() is ZERO, cannot be decremented, at line %zu, column %zu\n",
+                 __func__, __LINE__, tmp_pc->GetOrigLine(), tmp_pc->GetOrigCol());
+         log_flush(true);
+         exit(EX_SOFTWARE);
+      }
+      tmp_pc->SetLevel(tmp_pc->GetLevel() - 1);
    }
-   next = chunk_get_prev(br_open, scope_e::PREPROC);
 
-   chunk_del(br_open);
-   chunk_del(br_close);
+   next = br_open->GetPrev(E_Scope::PREPROC);
 
-   return(chunk_get_next(next, scope_e::PREPROC));
+   Chunk::Delete(br_open);
+   Chunk::Delete(br_close);
+
+   return(next->GetNext(E_Scope::PREPROC));
 } // mod_case_brace_remove
 
 
-static chunk_t *mod_case_brace_add(chunk_t *cl_colon)
+static Chunk *mod_case_brace_add(Chunk *cl_colon)
 {
    LOG_FUNC_ENTRY();
-   LOG_FMT(LMCB, "%s: line %zu", __func__, cl_colon->orig_line);
+   LOG_FMT(LMCB, "%s(%d): orig line %zu, orig col is %zu\n",
+           __func__, __LINE__, cl_colon->GetOrigLine(), cl_colon->GetOrigCol());
 
-   chunk_t *pc   = cl_colon;
-   chunk_t *last = nullptr;
-   chunk_t *next = chunk_get_next_ncnl(cl_colon, scope_e::PREPROC);
+   Chunk *pc   = cl_colon;
+   Chunk *last = Chunk::NullChunkPtr;
+   // look for the case token to the colon
+   Chunk *cas_ = cl_colon->GetPrevType(CT_CASE, cl_colon->GetLevel());
+   // look for the parent
+   Chunk *swit = cas_->GetParent();
+   // look for the opening brace of the switch
+   Chunk *open = swit->GetNextType(CT_BRACE_OPEN, swit->GetLevel());
+   // look for the closing brace of the switch
+   Chunk *clos = open->GetClosingParen();
 
-   while ((pc = chunk_get_next_ncnl(pc, scope_e::PREPROC)) != nullptr)
+   // find the end of the case-block
+   pc = pc->GetNextNcNnl(E_Scope::PREPROC);
+
+   while (pc->IsNotNullChunk())
    {
-      if (pc->level < cl_colon->level)
-      {
-         LOG_FMT(LMCB, " - level drop\n");
-         return(next);
-      }
+      LOG_FMT(LMCB, "%s(%d): Text() is '%s', orig line %zu, orig col is %zu, pp level is %zu\n",
+              __func__, __LINE__, pc->Text(), pc->GetOrigLine(), pc->GetOrigCol(), pc->GetPpLevel());
 
-      if (  pc->level == cl_colon->level
-         && (pc->type == CT_CASE || pc->type == CT_BREAK))
+      if (pc->GetLevel() == cl_colon->GetLevel())
       {
-         last = pc;
-         break;
+         if (pc->Is(CT_CASE))
+         {
+            LOG_FMT(LMCB, "%s(%d): Text() is '%s', orig line %zu, orig col is %zu\n",
+                    __func__, __LINE__, pc->Text(), pc->GetOrigLine(), pc->GetOrigCol());
+            last = calculate_closing_brace_position(cl_colon, pc);
+            break;
+         }
       }
+      else if (pc->GetLevel() == cl_colon->GetLevel() - 1)
+      {
+         if (pc == clos)
+         {
+            LOG_FMT(LMCB, "%s(%d): Text() is '%s', orig line %zu, orig col is %zu\n",
+                    __func__, __LINE__, pc->Text(), pc->GetOrigLine(), pc->GetOrigCol());
+            // end of switch is reached
+            last = calculate_closing_brace_position(cl_colon, pc);
+            LOG_FMT(LMCB, "%s(%d): last->Text() is '%s', orig line %zu, orig col is %zu\n",
+                    __func__, __LINE__, last->Text(), last->GetOrigLine(), last->GetOrigCol());
+            break;
+         }
+      }
+      pc = pc->GetNextNcNnl(E_Scope::PREPROC);
    }
 
-   if (last == nullptr)
+   if (last->IsNullChunk())
    {
-      LOG_FMT(LMCB, " - NULL last\n");
+      LOG_FMT(LMCB, "%s(%d):  - last is null chunk\n", __func__, __LINE__);
+      Chunk *next = cl_colon->GetNextNcNnl(E_Scope::PREPROC);
       return(next);
    }
+   LOG_FMT(LMCB, "%s(%d): last->Text() is '%s', orig line %zu, orig col is %zu\n",
+           __func__, __LINE__, last->Text(), last->GetOrigLine(), last->GetOrigCol());
+   LOG_FMT(LMCB, "%s(%d): adding braces after '%s' on line %zu\n",
+           __func__, __LINE__, cl_colon->Text(), cl_colon->GetOrigLine());
 
-   LOG_FMT(LMCB, " - adding before '%s' on line %zu\n", last->text(), last->orig_line);
+   Chunk chunk;
 
-   chunk_t chunk;
-   chunk.type        = CT_BRACE_OPEN;
-   chunk.orig_line   = cl_colon->orig_line;
-   chunk.parent_type = CT_CASE;
-   chunk.level       = cl_colon->level;
-   chunk.brace_level = cl_colon->brace_level;
-   chunk.flags       = pc->flags & PCF_COPY_FLAGS;
-   chunk.str         = "{";
+   chunk.SetType(CT_BRACE_OPEN);
+   chunk.SetParentType(CT_CASE);
+   chunk.SetOrigLine(cl_colon->GetOrigLine());
+   chunk.SetOrigCol(cl_colon->GetOrigCol());
+   chunk.SetLevel(cl_colon->GetLevel());
+   chunk.SetPpLevel(cl_colon->GetPpLevel());
+   chunk.SetBraceLevel(cl_colon->GetBraceLevel());
+   chunk.SetFlags(pc->GetFlags() & PCF_COPY_FLAGS);
+   chunk.Str() = "{";
+   Chunk *br_open = chunk.CopyAndAddAfter(cl_colon);
 
-   chunk_t *br_open = chunk_add_after(&chunk, cl_colon);
+   chunk.SetType(CT_BRACE_CLOSE);
+   chunk.SetOrigLine(last->GetOrigLine());
+   chunk.SetOrigCol(last->GetOrigCol());
+   chunk.Str() = "}";
+   Chunk *br_close = chunk.CopyAndAddAfter(last);
 
-   chunk.type      = CT_BRACE_CLOSE;
-   chunk.orig_line = last->orig_line;
-   chunk.str       = "}";
-
-   chunk_t *br_close = chunk_add_before(&chunk, last);
-   newline_add_before(last);
-
-   for (pc = chunk_get_next(br_open, scope_e::PREPROC);
+   for (pc = br_open->GetNext(E_Scope::PREPROC);
         pc != br_close;
-        pc = chunk_get_next(pc, scope_e::PREPROC))
+        pc = pc->GetNext(E_Scope::PREPROC))
    {
-      pc->level++;
-      pc->brace_level++;
+      pc->SetLevel(pc->GetLevel() + 1);
+      pc->SetBraceLevel(pc->GetBraceLevel() + 1);
    }
 
    return(br_open);
 } // mod_case_brace_add
 
 
-static void mod_case_brace(void)
+static void mod_case_brace()
 {
    LOG_FUNC_ENTRY();
 
-   chunk_t *pc = chunk_get_head();
-   while (pc != nullptr)
+   Chunk *pc = Chunk::GetHead();
+
+   // Make sure to start outside of a preprocessor line (see issue #3366)
+   if (pc->IsPreproc())
    {
-      chunk_t *next = chunk_get_next_ncnl(pc, scope_e::PREPROC);
-      if (next == nullptr)
+      pc = pc->GetNextNcNnlNpp();
+   }
+
+   while (pc->IsNotNullChunk())
+   {
+      Chunk *next = pc->GetNextNcNnl(E_Scope::PREPROC);
+
+      if (next->IsNullChunk())
       {
          return;
       }
+      log_rule_B("mod_case_brace");
 
-      if (  cpd.settings[UO_mod_case_brace].a == AV_REMOVE
-         && pc->type == CT_BRACE_OPEN
-         && pc->parent_type == CT_CASE)
+      if (  options::mod_case_brace() == IARF_REMOVE
+         && pc->Is(CT_BRACE_OPEN)
+         && pc->GetParentType() == CT_CASE)
       {
+         log_rule_B("mod_case_brace - add");
          pc = mod_case_brace_remove(pc);
       }
-      else if (  (cpd.settings[UO_mod_case_brace].a & AV_ADD)
-              && pc->type == CT_CASE_COLON
-              && next->type != CT_BRACE_OPEN
-              && next->type != CT_BRACE_CLOSE
-              && next->type != CT_CASE)
+      else if (  (options::mod_case_brace() & IARF_ADD)
+              && pc->Is(CT_CASE_COLON)
+              && next->IsNot(CT_BRACE_OPEN)
+              && next->IsNot(CT_BRACE_CLOSE)
+              && next->IsNot(CT_CASE))
       {
+         log_rule_B("mod_case_brace - remove");
          pc = mod_case_brace_add(pc);
       }
       else
       {
-         pc = chunk_get_next_ncnl(pc, scope_e::PREPROC);
+         pc = pc->GetNextNcNnl(E_Scope::PREPROC);
       }
    }
-}
+} // mod_case_brace
 
 
-static void process_if_chain(chunk_t *br_start)
+static void process_if_chain(Chunk *br_start)
 {
    LOG_FUNC_ENTRY();
-   LOG_FMT(LBRCH, "%s: if starts on line %zu\n", __func__, br_start->orig_line);
+   LOG_FMT(LBRCH, "%s(%d): if starts on line %zu, orig col is %zu.\n",
+           __func__, __LINE__, br_start->GetOrigLine(), br_start->GetOrigCol());
 
-   vector<chunk_t *> braces;
+   vector<Chunk *> braces;
+
    braces.reserve(16);
 
-   bool    must_have_braces = false;
+   bool  must_have_braces   = false;
+   bool  has_unbraced_block = false;
 
-   chunk_t *pc = br_start;
-   while (pc != nullptr)
+   Chunk *pc = br_start;
+
+   while (pc->IsNotNullChunk())
    {
-      if (pc->type == CT_BRACE_OPEN)
+      LOG_CHUNK(LTOK, pc);
+
+      if (pc->Is(CT_BRACE_OPEN))
       {
          const bool tmp = can_remove_braces(pc);
-         LOG_FMT(LBRCH, "  [%zu] line %zu - can%s remove %s\n",
-                 braces.size(), pc->orig_line, tmp ? "" : "not",
-                 get_token_name(pc->type));
-         if (!tmp)
+         LOG_FMT(LBRCH, "%s(%d): braces.size() is %zu, line is %zu, - can%s remove %s\n",
+                 __func__, __LINE__, braces.size(), pc->GetOrigLine(), tmp ? "" : "not",
+                 get_token_name(pc->GetType()));
+
+         if (  !tmp
+            || options::mod_full_brace_if_chain() == 2)
          {
             must_have_braces = true;
          }
@@ -1190,50 +1551,64 @@ static void process_if_chain(chunk_t *br_start)
       else
       {
          const bool tmp = should_add_braces(pc);
+
          if (tmp)
          {
             must_have_braces = true;
          }
-         LOG_FMT(LBRCH, "  [%zu] line %zu - %s %s\n",
-                 braces.size(), pc->orig_line, tmp ? "should add" : "ignore",
-                 get_token_name(pc->type));
+         LOG_FMT(LBRCH, "%s(%d): braces.size() is %zu, line is %zu, - %s %s\n",
+                 __func__, __LINE__, braces.size(), pc->GetOrigLine(), tmp ? "should add" : "ignore",
+                 get_token_name(pc->GetType()));
+
+         has_unbraced_block = true;
       }
 
+      if (  options::mod_full_brace_if_chain() == 3
+         && !has_unbraced_block)
+      {
+         must_have_braces = true;
+      }
       braces.push_back(pc);
-      chunk_t *br_close = chunk_skip_to_match(pc, scope_e::PREPROC);
-      if (br_close == nullptr)
+      Chunk *br_close = pc->GetClosingParen(E_Scope::PREPROC);
+
+      if (br_close->IsNullChunk())
       {
          break;
       }
       braces.push_back(br_close);
 
-      pc = chunk_get_next_ncnl(br_close, scope_e::PREPROC);
-      if (pc == nullptr || pc->type != CT_ELSE)
+      pc = br_close->GetNextNcNnl(E_Scope::PREPROC);
+
+      if (  pc->IsNullChunk()
+         || pc->IsNot(CT_ELSE))
       {
          break;
       }
+      log_rule_B("mod_full_brace_if_chain_only");
 
-      if (cpd.settings[UO_mod_full_brace_if_chain_only].b)
+      if (options::mod_full_brace_if_chain_only())
       {
          // There is an 'else' - we want full braces.
          must_have_braces = true;
       }
+      pc = pc->GetNextNcNnl(E_Scope::PREPROC);
 
-      pc = chunk_get_next_ncnl(pc, scope_e::PREPROC);
-      if (chunk_is_token(pc, CT_ELSEIF))
+      if (pc->Is(CT_ELSEIF))
       {
-         while (  pc != nullptr
-               && pc->type != CT_VBRACE_OPEN
-               && pc->type != CT_BRACE_OPEN)
+         while (  pc->IsNot(CT_VBRACE_OPEN)
+               && pc->IsNot(CT_BRACE_OPEN))
          {
-            pc = chunk_get_next_ncnl(pc, scope_e::PREPROC);
+            pc = pc->GetNextNcNnl(E_Scope::PREPROC);
          }
       }
-      if (pc == nullptr)
+
+      if (pc->IsNullChunk())
       {
          break;
       }
-      if (pc->type != CT_BRACE_OPEN && pc->type != CT_VBRACE_OPEN)
+
+      if (  pc->IsNot(CT_BRACE_OPEN)
+         && pc->IsNot(CT_VBRACE_OPEN))
       {
          break;
       }
@@ -1241,69 +1616,83 @@ static void process_if_chain(chunk_t *br_start)
 
    if (must_have_braces)
    {
-      LOG_FMT(LBRCH, "%s: add braces on lines[%zu]:", __func__, braces.size());
+      LOG_FMT(LBRCH, "%s(%d): add braces on lines[%zu]:",
+              __func__, __LINE__, braces.size());
 
       const auto ite = braces.rend();
+
       for (auto itc = braces.rbegin(); itc != ite; ++itc)
       {
          const auto brace = *itc;
 
-         chunk_flags_set(brace, PCF_KEEP_BRACE);
-         if (brace->type == CT_VBRACE_OPEN || brace->type == CT_VBRACE_CLOSE)
+         brace->SetFlagBits(PCF_KEEP_BRACE);
+
+         if (brace->IsVBrace())
          {
-            LOG_FMT(LBRCH, " %zu", brace->orig_line);
+            LOG_FMT(LBRCH, "%s(%d):  %zu",
+                    __func__, __LINE__, brace->GetOrigLine());
             convert_vbrace(brace);
          }
          else
          {
-            LOG_FMT(LBRCH, " {%zu}", brace->orig_line);
+            LOG_FMT(LBRCH, "%s(%d):  {%zu}",
+                    __func__, __LINE__, brace->GetOrigLine());
          }
       }
+
       LOG_FMT(LBRCH, "\n");
    }
-   else if (cpd.settings[UO_mod_full_brace_if_chain].b)
+   else if (options::mod_full_brace_if_chain())
    {
-      LOG_FMT(LBRCH, "%s: remove braces on lines[%zu]:", __func__, braces.size());
+      log_rule_B("mod_full_brace_if_chain");
+      LOG_FMT(LBRCH, "%s(%d): remove braces on lines[%zu]:\n",
+              __func__, __LINE__, braces.size());
 
       /*
        * This might run because either
-       * UO_mod_full_brace_if_chain or UO_mod_full_brace_if_chain_only
+       * mod_full_brace_if_chain or mod_full_brace_if_chain_only
        * is used.
        * We only want to remove braces if the first one is active.
        */
-      const auto multiline_block = cpd.settings[UO_mod_full_brace_nl_block_rem_mlcond].b;
+      log_rule_B("mod_full_brace_nl_block_rem_mlcond");
+      const auto multiline_block = options::mod_full_brace_nl_block_rem_mlcond();
 
-      LOG_FMT(LBRCH, "%s(%d): remove braces on lines:", __func__, __LINE__);
+      LOG_FMT(LBRCH, "%s(%d): remove braces on lines:\n", __func__, __LINE__);
 
-      const auto ite = braces.rend();
-      for (auto itc = braces.rbegin(); itc != ite; ++itc)
+      // Issue #2229
+      const auto ite = braces.end();
+
+      for (auto itc = braces.begin(); itc != ite; ++itc)
       {
          const auto brace = *itc;
 
-         if (  (brace->type == CT_BRACE_OPEN || brace->type == CT_BRACE_CLOSE)
+         if (  (  brace->Is(CT_BRACE_OPEN)
+               || brace->Is(CT_BRACE_CLOSE))
+            && (brace->GetParentType() != CT_BRACED_INIT_LIST)
             && (multiline_block ? !paren_multiline_before_brace(brace) : true))
          {
-            LOG_FMT(LBRCH, " {%zu}", brace->orig_line);
+            LOG_FMT(LBRCH, "%s(%d): brace orig line is %zu, orig col is %zu\n",
+                    __func__, __LINE__, brace->GetOrigLine(), brace->GetOrigCol());
             convert_brace(brace);
          }
          else
          {
-            LOG_FMT(LBRCH, " %zu", brace->orig_line);
+            LOG_FMT(LBRCH, "%s(%d): brace orig line is %zu, orig col is %zu\n",
+                    __func__, __LINE__, brace->GetOrigLine(), brace->GetOrigCol());
          }
       }
-      LOG_FMT(LBRCH, "\n");
    }
 } // process_if_chain
 
 
-static void mod_full_brace_if_chain(void)
+static void mod_full_brace_if_chain()
 {
    LOG_FUNC_ENTRY();
 
-   for (chunk_t *pc = chunk_get_head(); pc != nullptr; pc = chunk_get_next(pc))
+   for (Chunk *pc = Chunk::GetHead(); pc->IsNotNullChunk(); pc = pc->GetNext())
    {
-      if (  (pc->type == CT_BRACE_OPEN || pc->type == CT_VBRACE_OPEN)
-         && pc->parent_type == CT_IF)
+      if (  pc->IsBraceOpen()
+         && pc->GetParentType() == CT_IF)
       {
          process_if_chain(pc);
       }

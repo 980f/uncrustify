@@ -12,5 +12,10 @@ std::printf(FORMAT,argc);
 printf("Hello from thread!\n");
 }
 #endif
+
+#pragma CoverageScanner(cov-off)
+__pragma ( CoverageScanner(cov-off) )
+_Pragma ( CoverageScanner(cov-off) )
+
 return 0;
 }

@@ -1,6 +1,6 @@
 /**
  * @file indent.h
- * prototypes for indent.c
+ * prototypes for indent.cpp
  *
  * @author  Ben Gardner
  * @license GPL v2+
@@ -16,7 +16,7 @@
  * the chunk structures.
  * The level indicator must already be set.
  */
-void indent_text(void);
+void indent_text();
 
 
 /**
@@ -24,14 +24,14 @@ void indent_text(void);
  * FIXME: This is broken if there is a comment or escaped newline
  * between '#' and 'define'.
  */
-void indent_preproc(void);
+void indent_preproc();
 
 /**
  *
  * @param pc      chunk at the start of the line
  * @param column  desired column
  */
-void indent_to_column(chunk_t *pc, size_t column);
+void indent_to_column(Chunk *pc, size_t column);
 
 
 /**
@@ -40,20 +40,7 @@ void indent_to_column(chunk_t *pc, size_t column);
  * @param pc      chunk at the start of the line
  * @param column  desired column
  */
-void align_to_column(chunk_t *pc, size_t column);
-
-
-//! Scan to see if the whole file is covered by one #ifdef
-bool ifdef_over_whole_file(void);
-
-
-/**
- * Changes the initial indent for a line to the given column
- *
- * @param pc      The chunk at the start of the line
- * @param column  The desired column
- */
-void reindent_line(chunk_t *pc, size_t column);
+void align_to_column(Chunk *pc, size_t column);
 
 
 #endif /* INDENT_H_INCLUDED */

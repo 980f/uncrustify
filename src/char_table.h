@@ -6,9 +6,12 @@
  * @author  Ben Gardner
  * @license GPL v2+
  */
+
 #ifndef CHAR_TABLE_H_INCLUDED
 #define CHAR_TABLE_H_INCLUDED
 
+#include "base_types.h"
+#include <cstddef>
 
 /**
  * bit0-7 = paired char
@@ -32,7 +35,6 @@ struct CharTable
       {
          return(chars[ch]);
       }
-
       /*
        * HACK: If the top bit is set, then we are likely dealing with UTF-8,
        * and since that is only allowed in identifiers, then assume that is

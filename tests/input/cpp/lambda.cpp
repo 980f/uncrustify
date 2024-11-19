@@ -1,7 +1,7 @@
 void f1()
 {
     auto a =
-    [=](int *a, Something & b)
+    [=]   (int *a, Something & b)
     {
         std::cout << "blah: " << *a;
     };
@@ -37,7 +37,7 @@ void f2()
 
 void f3a()
 {
-   auto a = [] {};
+   auto a = []    {};
    auto b = []{return true;};
 }
 
@@ -57,7 +57,7 @@ void f3c()
 
 void g1()
 {
-   auto a = [ = ](int* a, Something &b) { std::cout << "blah: " << *a; };
+   auto a = [   =     ](int* a, Something &b)    { std::cout << "blah: " << *a; };
 }
 
 void g1a()
@@ -67,11 +67,37 @@ void g1a()
 
 void g1b()
 {
-   std::for_each(a, b, [] (int& b)->foo{ b+=3; return(b); });
+   std::for_each(a, b, []  (int& b)->foo{ b+=3; return(b); });
 }
 
 void g2()
 {
    Invoke(a, b,
-          [&one, two] (int *a, Something&b){ std::cout << "blah: " << *a; });
+          [&one, two]  (int *a, Something&b){ std::cout << "blah: " << *a; });
+}
+
+void h1()
+{
+   []() -> int
+   {
+      return 33;
+   }();
+
+   []() noexcept -> int
+   {
+      return 33;
+   }();
+}
+
+void h2()
+{
+   [](int a) -> int
+   {
+      return a + 33;
+   }(21);
+
+   [](int a) noexcept -> int
+   {
+      return a + 33;
+   }(21);
 }

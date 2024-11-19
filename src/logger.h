@@ -11,11 +11,12 @@
  * @author  Ben Gardner
  * @license GPL v2+
  */
+
 #ifndef LOGGER_H_INCLUDED
 #define LOGGER_H_INCLUDED
 
 #include "logmask.h"
-#include <cstring>     // strlen()
+
 #include <cstdio>      // FILE
 
 
@@ -73,27 +74,15 @@ void log_set_mask(const log_mask_t &mask);
 void log_get_mask(log_mask_t &mask);
 
 
-/**
- * Logs a string of known length
- *
- * @param sev  The severity
- * @param str  The pointer to the string
- * @param len  The length of the string from strlen(str)
- *
- * TODO call strlen internally instead of providing len
- */
-void log_str(log_sev_t sev, const char *str, size_t len);
-
-
-#define LOG_STR(sev, str, len)                           \
-   do { if (log_sev_on(sev)) { log_str(sev, str, len); } \
-   } while (0)
-
-
-#define LOG_STRING(sev, str)                                     \
-   do { if (log_sev_on(sev)) { log_str(sev, str, strlen(str)); } \
-   } while (0)
-
+#ifdef __MINGW_PRINTF_FORMAT
+// On MinGW, the printf functions can be provided by a number of different
+// implementations, with different format string support. Annontate log_fmt
+// below with the same format attribute as the currently chosen default printf
+// function.
+#define PRINTF_FORMAT    __MINGW_PRINTF_FORMAT
+#else
+#define PRINTF_FORMAT    printf
+#endif
 
 /**
  * Logs a formatted string -- similar to printf()
@@ -102,7 +91,7 @@ void log_str(log_sev_t sev, const char *str, size_t len);
  * @param fmt  The format string
  * @param ...  Additional arguments
  */
-void log_fmt(log_sev_t sev, const char *fmt, ...) __attribute__((format(printf, 2, 3)));
+void log_fmt(log_sev_t sev, const char *fmt, ...) __attribute__((format(PRINTF_FORMAT, 2, 3)));
 
 
 /**
@@ -123,69 +112,30 @@ void log_flush(bool force_nl);
 #define LOG_FMT    log_fmt
 // TODO during debugging add source file and line number
 #else
-#define LOG_FMT(sev, ...)                                   \
-   do { if (log_sev_on(sev)) { log_fmt(sev, __VA_ARGS__); } \
-   } while (0)
+#define LOG_FMT(sev, ...) \
+   if (log_sev_on(sev)) { log_fmt(sev, __VA_ARGS__); }
 #endif
 
 
-#ifdef DEBUG
-#define D_LOG_FMT    LOG_FMT
-#else
-#define D_LOG_FMT(sev, ...)    ((void)0) //forces semicolon after macro
-#endif
+#define __unqualified_func__    get_unqualified_func_name(__func__)
 
 
-/**
- * Dumps hex characters inline, no newlines inserted
- *
- * @param sev     The severity
- * @param data    The data to log
- * @param len     The number of bytes to log
- */
-void log_hex(log_sev_t sev, const void *vdata, size_t len);
-
-
-#define LOG_HEX(sev, ptr, len)                           \
-   do { if (log_sev_on(sev)) { log_hex(sev, ptr, len); } \
-   } while (0)
-
-
-/**
- * Logs a block of data in a pretty hex format
- * Numbers on the left, characters on the right, just like I like it.
- *
- * "nnn | XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX XX | ................"
- *  0     ^6                                            54^ ^56           72^
- *
- *  nnn is the line number or index/16
- *
- * @param sev   The severity
- * @param data  The data to log
- * @param len   The number of bytes to log
- */
-void log_hex_blk(log_sev_t sev, const void *data, size_t len);
-
-
-#define LOG_HEX_BLK(sev, ptr, len)                           \
-   do { if (log_sev_on(sev)) { log_hex_blk(sev, ptr, len); } \
-   } while (0)
-
-
-/**
- * Returns the HEX digit for a low nibble in a number
- *
- * @param nibble  The nibble
- *
- * @return '0', '1', '2', '3', '4', '5', '6', '7','8', '9',
- *         'a', 'b', 'c', 'd', 'e', or 'f'
- */
-static_inline char to_hex_char(int nibble)
-{
-   const char *hex_string = "0123456789abcdef";
-
-   return(hex_string[nibble & 0x0F]);
-}
+#define LOG_CHUNK(sev, pc_current)                                                                                                                                                             \
+   if (pc_current->Is(CT_NEWLINE))                                                                                                                                                             \
+   {                                                                                                                                                                                           \
+      LOG_FMT(sev, "%s(%d): orig line is %zu, orig col is %zu, <Newline>, PRE is %s\n",                                                                                                        \
+              __func__, __LINE__, pc_current->GetOrigLine(), pc_current->GetOrigCol(), pc_current->IsPreproc() ? "true" : "false");                                                            \
+   }                                                                                                                                                                                           \
+   else if (pc_current->Is(CT_NL_CONT))                                                                                                                                                        \
+   {                                                                                                                                                                                           \
+      LOG_FMT(sev, "%s(%d): orig line is %zu, orig col is %zu, Text() '%s', type is %s, PRE is %s\n",                                                                                          \
+              __func__, __LINE__, pc_current->GetOrigLine(), pc_current->GetOrigCol(), pc_current->Text(), get_token_name(pc_current->GetType()), pc_current->IsPreproc() ? "true" : "false"); \
+   }                                                                                                                                                                                           \
+   else                                                                                                                                                                                        \
+   {                                                                                                                                                                                           \
+      LOG_FMT(sev, "%s(%d): orig line is %zu, orig col is %zu, Text() '%s', type is %s, PRE is %s\n",                                                                                          \
+              __func__, __LINE__, pc_current->GetOrigLine(), pc_current->GetOrigCol(), pc_current->Text(), get_token_name(pc_current->GetType()), pc_current->IsPreproc() ? "true" : "false"); \
+   }
 
 
 #ifdef DEBUG
@@ -194,19 +144,11 @@ static_inline char to_hex_char(int nibble)
  * It uses the log_func class to add an entry to the function log stack.
  * It is automatically removed when the function returns.
  */
-#define LOG_FUNC_ENTRY()    log_func log_fe = log_func(__func__, __LINE__)
+#define LOG_FUNC_ENTRY()    log_func log_fe = log_func(__unqualified_func__, __LINE__)
 
-
-/**
- * This should be called right before a repeated function call to trace where
- * the function was called. It does not add an entry, but rather updates the
- * line number of the top entry.
- */
-#define LOG_FUNC_CALL()    log_func_call(__LINE__)
 
 #else
 #define LOG_FUNC_ENTRY()
-#define LOG_FUNC_CALL()
 #endif
 
 
@@ -225,13 +167,18 @@ public:
 };
 
 
-void log_func_call(int line);
-
-
 void log_func_stack(log_sev_t sev, const char *prefix = 0, const char *suffix = "\n", size_t skip_cnt = 0);
 
 
-#define log_func_stack_inline(_sev)    log_func_stack((_sev), " [CallStack:", "]\n", 1)
+/**
+ * Return the unqualified function name from the input argument
+ * @param  the qualified function name, usually provided by __func__ macro
+ * @return the corresponding unqualified name
+ */
+const char *get_unqualified_func_name(const char *func);
+
+
+#define log_func_stack_inline(_sev)    log_func_stack((_sev), " [CallStack:", "]\n", 0)
 
 
 #endif /* LOGGER_H_INCLUDED */

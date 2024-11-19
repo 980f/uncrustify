@@ -1,4 +1,7 @@
 
+void Events1(NSString *    identifier, void (^handler)());
+
+void Events2(NSString *    identifier, void (^)());
 
 @implementation NSArray (WWDC)
 - (NSArray *)map:(id (^)(id))xform {
@@ -33,6 +36,30 @@ id longLines = [allLines collect: ^ BOOL* (id item) {
 }];
 
 @end
+
+nestedMethodCall(methodCall( ^ BOOL * (id item) {
+  NSLog(@"methodCall")
+}));
+
+nestedMethodCall(
+    arg1,
+    methodCall(  ^ NSString * (id item) {
+        NSLog(@"methodCall")
+    }));
+
+nestedMethodCall(
+    arg1,
+    methodCall(  ^ {
+        NSLog(@"methodCall")
+    },
+    arg2)
+);
+
+nestedMethodCall(
+    methodCall(  ^ {
+        NSLog(@"methodCall")
+    })
+);
 
 // 1. block literal: ^{ ... };
 // 2. block declaration: return_t (^name) (int arg1, int arg2, ...) NB: return_t is optional and name is also optional

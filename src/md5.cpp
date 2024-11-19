@@ -18,6 +18,7 @@
  */
 
 #include "md5.h"
+
 #include <string.h>
 
 
@@ -72,6 +73,7 @@ MD5::MD5()
     * The MD5 stuff is written for little endian.
     */
 
+   m_in8           = (UINT8 *)m_in32;
    m_need_byteswap = *(UINT8 *)m_buf != 4;
    m_big_endian    = *(UINT8 *)m_buf == 1;
 }
@@ -108,20 +110,22 @@ void MD5::Update(const void *data, UINT32 len)
    // Handle any leading odd-sized chunks
    if (t)
    {
-      UINT8 *p = (UINT8 *)m_in + t;
+      UINT8 *p = m_in8 + t;
 
       t = 64 - t;
+
       if (len < t)
       {
          memcpy(p, buf, len);
          return;
       }
       memcpy(p, buf, t);
+
       if (m_need_byteswap)
       {
-         reverse_u32(m_in, 16);
+         reverse_u32(m_in8, 16);
       }
-      Transform(m_buf, (UINT32 *)m_in);
+      Transform(m_buf, m_in32);
       buf += t;
       len -= t;
    }
@@ -129,18 +133,18 @@ void MD5::Update(const void *data, UINT32 len)
    // Process data in 64-byte chunks
    while (len >= 64)
    {
-      memcpy(m_in, buf, 64);
+      memcpy(m_in32, buf, 64);
+
       if (m_need_byteswap)
       {
-         reverse_u32(m_in, 16);
+         reverse_u32(m_in8, 16);
       }
-      Transform(m_buf, (UINT32 *)m_in);
+      Transform(m_buf, m_in32);
       buf += 64;  // TODO: possible creation of out-of-bounds pointer 64 beyond end of data
       len -= 64;
    }
-
    // Save off any remaining bytes of data
-   memcpy(m_in, buf, len); // TODO: possible access beyond array
+   memcpy(m_in32, buf, len); // TODO: possible access beyond array
 } // MD5::Update
 
 
@@ -153,7 +157,7 @@ void MD5::Final(UINT8 digest[16])
     * Set the first char of padding to 0x80. This is safe since there is always
     * at least one byte free
     */
-   UINT8 *p = m_in + count;
+   UINT8 *p = m_in8 + count;
 
    *p++ = 0x80;
 
@@ -165,30 +169,32 @@ void MD5::Final(UINT8 digest[16])
    {
       // Two lots of padding:  Pad the first block to 64 bytes
       memset(p, 0, count);
+
       if (m_need_byteswap)
       {
-         reverse_u32(m_in, 16);
+         reverse_u32(m_in8, 16);
       }
-      Transform(m_buf, (UINT32 *)m_in);
+      Transform(m_buf, m_in32);
 
       // Now fill the next block with 56 bytes
-      memset(m_in, 0, 56);
+      memset(m_in32, 0, 56);
    }
    else
    {
       // Pad block to 56 bytes
       memset(p, 0, count - 8);
    }
+
    if (m_need_byteswap)
    {
-      reverse_u32(m_in, 14);
+      reverse_u32(m_in8, 14);
    }
-
    // Append length in bits and transform
-   memcpy(m_in + 56, &m_bits[0], 4);
-   memcpy(m_in + 60, &m_bits[1], 4);
+   memcpy(m_in8 + 56, &m_bits[0], 4);
+   memcpy(m_in8 + 60, &m_bits[1], 4);
 
-   Transform(m_buf, (UINT32 *)m_in);
+   Transform(m_buf, m_in32);
+
    if (m_need_byteswap)
    {
       reverse_u32((UINT8 *)m_buf, 4);

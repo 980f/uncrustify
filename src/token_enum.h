@@ -7,6 +7,7 @@
  *          October 2015
  * @license GPL v2+
  */
+
 #ifndef TOKEN_ENUM_H_INCLUDED
 #define TOKEN_ENUM_H_INCLUDED
 
@@ -18,43 +19,44 @@
 
 /**
  * This is an enum of all the different chunks/tokens/elements that the
- * program can work with.  The parser and scanner assigns one of these to
+ * program can work with. The parser and scanner assigns one of these to
  * each chunk/token.
- *
- * The script 'make_token_names.sh' creates token_names.h, so be sure to run
- * that after adding or removing an entry.
  */
-enum c_token_t
+enum E_Token
 {
    CT_NONE,
+   CT_PARENT_NOT_SET,
    CT_EOF,
    CT_UNKNOWN,
 
-   CT_JUNK,          // junk collected when parsing is disabled
+   CT_JUNK,              // junk collected when parsing is disabled
 
-   CT_WHITESPACE,    // whitespace without any newlines
-   CT_SPACE,         // a fixed number of spaces to support weird spacing rules
-   CT_NEWLINE,       // CRA, one or more newlines
-   CT_NL_CONT,       // CRA, backslash-newline
-   CT_COMMENT_CPP,   // C++ comment (always followed by CT_NEWLINE)
-   CT_COMMENT,       // C-comment, single line
-   CT_COMMENT_MULTI, // Multi-lined comment
-   CT_COMMENT_EMBED, // comment parent_type: non-newline before and after
-   CT_COMMENT_START, // comment parent_type: newline before
-   CT_COMMENT_END,   // comment parent_type: newline after
-   CT_COMMENT_WHOLE, // comment parent_type: newline before and after
-   CT_COMMENT_ENDIF, // C-comment, single line, after ENDIF
+   CT_WHITESPACE,        // whitespace without any newlines
+   CT_SPACE,             // a fixed number of spaces to support weird spacing rules
+   CT_NEWLINE,           // CRA, one or more newlines
+   CT_NL_CONT,           // CRA, backslash-newline
+   CT_FORM_FEED,         // character 12
+   CT_COMMENT_CPP,       // C++ comment (always followed by CT_NEWLINE)
+   CT_COMMENT,           // C-comment, single line
+   CT_COMMENT_MULTI,     // Multi-lined comment
+   CT_COMMENT_EMBED,     // comment parent_type: non-newline before and after
+   CT_COMMENT_START,     // comment parent_type: newline before
+   CT_COMMENT_END,       // comment parent_type: newline after
+   CT_COMMENT_WHOLE,     // comment parent_type: newline before and after
+   CT_COMMENT_CPP_ENDIF, // C++ comment, single line, after #endif or #else
+   CT_COMMENT_ENDIF,     // C-comment, single line, after #endif or #else
 
-   CT_IGNORED,       // a chunk of ignored text
+   CT_IGNORED,           // a chunk of ignored text
 
-   CT_WORD,          // variable, type, function name, etc
+   CT_WORD,              // variable, type, function name, etc
    CT_NUMBER,
    CT_NUMBER_FP,
-   CT_STRING,        // quoted string "hi" or 'a' or <in> for include
-   CT_STRING_MULTI,  // quoted string with embedded newline
-   CT_IF,            // built-in keywords
+   CT_STRING,            // quoted string "hi" or 'a' or <in> for include
+   CT_STRING_MULTI,      // quoted string with embedded newline
+   CT_IF,                // built-in keywords
    CT_ELSE,
    CT_ELSEIF,
+   CT_CONSTEXPR,         // only when preceded by 'if' (otherwise CT_QUALIFIER)
    CT_FOR,
    CT_WHILE,
    CT_WHILE_OF_DO,
@@ -68,6 +70,7 @@ enum c_token_t
    CT_ENUM,
    CT_ENUM_CLASS,
    CT_SIZEOF,
+   CT_DECLTYPE,
    CT_RETURN,
    CT_BREAK,
    CT_UNION,
@@ -79,17 +82,27 @@ enum c_token_t
    CT_TYPE_CAST,           // static_cast<type>(exp)
    CT_TYPENAME,            // typename type
    CT_TEMPLATE,            // template<...>
+   CT_PARAMETER_PACK,      // template<typename ... ARGS>
    CT_WHERE_SPEC,          // 'where' : used in C# generic constraint
 
    CT_ASSIGN,              // =, +=, /=, etc
    CT_ASSIGN_NL,           // Assign followed by a newline - fake item for indenting
    CT_SASSIGN,             // 'and_eq'
+
+   CT_ASSIGN_DEFAULT_ARG,  // Default argument such as
+                           // Foo( int Foo = 5 );
+   CT_ASSIGN_FUNC_PROTO,   // function prototype modifier such as
+                           // void* operator new(std::size_t) = delete;
+                           // Foo( const Foo & ) = default;
+                           // Foo( const Foo & ) = 0;
+
    CT_COMPARE,             // ==, !=, <=, >=
    CT_SCOMPARE,            // compare op that is a string 'is', 'neq'
    CT_BOOL,                // || or &&
    CT_SBOOL,               // or, and
-   CT_ARITH,               // +, -, /, <<, etc
+   CT_ARITH,               // +, -, /, etc
    CT_SARITH,              // 'not', 'xor'
+   CT_SHIFT,               // <<, >>
    CT_CARET,               // ^
    CT_DEREF,               // * dereference
    CT_INCDEC_BEFORE,       // ++a or --a
@@ -129,16 +142,18 @@ enum c_token_t
    CT_COLON,
    CT_ASM_COLON,
    CT_CASE_COLON,
+   CT_CASE_ELLIPSIS,       // '...' in `case 1 ... 5`:
    CT_CLASS_COLON,         // colon after a class def
    CT_CONSTR_COLON,        // colon after a constructor
    CT_D_ARRAY_COLON,       // D named array initializer colon
-   CT_COND_COLON,          // conditional colon in  'b ? t : f'
+   CT_COND_COLON,          // conditional colon in 'b ? t : f'
    CT_WHERE_COLON,         // C# where-constraint colon (after the type)
-   CT_QUESTION,
+   CT_QUESTION,            // conditional question in 'b ? t : f'
    CT_COMMA,
 
    CT_ASM,
    CT_ATTRIBUTE,
+   CT_AUTORELEASEPOOL,     // OC: Autorelease Pool Blocks, used by iOS
    CT_OC_AVAILABLE,
    CT_OC_AVAILABLE_VALUE,
    CT_CATCH,
@@ -153,15 +168,18 @@ enum c_token_t
    CT_NEW,              // may turn into CT_PBRACED if followed by a '('
    CT_OPERATOR,
    CT_OPERATOR_VAL,
-   CT_PRIVATE,
-   CT_PRIVATE_COLON,
+   CT_ASSIGN_OPERATOR,  // the value after 'operator' such as:
+                        // Foo &operator= ( const Foo & );
+   CT_ACCESS,
+   CT_ACCESS_COLON,
    CT_THROW,
    CT_NOEXCEPT,
    CT_TRY,
    CT_BRACED_INIT_LIST,
    CT_USING,
    CT_USING_STMT,       // using (xxx) ...
-   CT_D_WITH,           // D: paren+braced
+   CT_USING_ALIAS,      // using identifier attr(optional) = type-id
+   CT_D_WITH,           // D: parenthetis+braced
    CT_D_MODULE,
    CT_SUPER,
    CT_DELEGATE,
@@ -181,21 +199,30 @@ enum c_token_t
    CT_D_VERSION,        // turns into CT_D_VERSION_IF if not followed by '='
    CT_D_VERSION_IF,     // version(x) { }
 
-   // note for paren/brace/square pairs: close MUST be open + 1
+   // note for parenthetis/brace/square pairs: close MUST be open + 1
    CT_PAREN_OPEN,
    CT_PAREN_CLOSE,
 
    CT_ANGLE_OPEN,       // template<T*>
    CT_ANGLE_CLOSE,
 
-   CT_SPAREN_OPEN,      // 'special' paren after if/for/switch/while/synchronized
+   CT_SPAREN_OPEN,      // 'special' parenthetis after if/for/switch/while/synchronized/catch
    CT_SPAREN_CLOSE,
 
-   CT_FPAREN_OPEN,      // 'function' paren after fcn/macro fcn
+   CT_PPAREN_OPEN,      // 'protect' parenthetis to protect a type such as (*int)
+   CT_PPAREN_CLOSE,     // used at align_func_param
+
+   CT_FPAREN_OPEN,      // 'function' parenthetis after fcn/macro fcn
    CT_FPAREN_CLOSE,
 
-   CT_TPAREN_OPEN,      // 'type' paren used in function types
+   CT_LPAREN_OPEN,      // lambda-declarator parenthetis
+   CT_LPAREN_CLOSE,
+
+   CT_TPAREN_OPEN,      // 'type' parenthetis used in function types
    CT_TPAREN_CLOSE,
+
+   CT_RPAREN_OPEN,      // functor                                    Issue #3914
+   CT_RPAREN_CLOSE,
 
    CT_BRACE_OPEN,       // {...}
    CT_BRACE_CLOSE,
@@ -213,33 +240,38 @@ enum c_token_t
    CT_MACRO_ELSE,
 
    // aggregate types
-   CT_LABEL,            // a non-case label
-   CT_LABEL_COLON,      // the colon for a label
-   CT_FUNCTION,         // function - unspecified, call mark_function()
-   CT_FUNC_CALL,        // function call
-   CT_FUNC_CALL_USER,   // function call (special user)
-   CT_FUNC_DEF,         // function definition/implementation
-   CT_FUNC_TYPE,        // function type - foo in "typedef void (*foo)(void)"
-   CT_FUNC_VAR,         // foo and parent type of first parens in "void (*foo)(void)"
-   CT_FUNC_PROTO,       // function prototype
-   CT_FUNC_START,       // global DC member for functions(void ::func())
-   CT_FUNC_CLASS_DEF,   // ctor or dtor for a class
-   CT_FUNC_CLASS_PROTO, // ctor or dtor for a class
-   CT_FUNC_CTOR_VAR,    // variable or class initialization
-   CT_FUNC_WRAP,        // macro that wraps the function name
-   CT_PROTO_WRAP,       // macro: "RETVAL PROTO_WRAP( fcn_name, (PARAMS))". Parens for PARAMS are optional.
-   CT_MACRO_FUNC,       // function-like macro
-   CT_MACRO,            // a macro def
-   CT_QUALIFIER,        // static, const, etc
-   CT_EXTERN,           // extern
-   CT_DECLSPEC,         // __declspec
-   CT_ALIGN,            // paren'd qualifier: align(4) struct a { }
+   CT_LABEL,              // a non-case label
+   CT_LABEL_COLON,        // the colon for a label
+   CT_FUNCTION,           // function - unspecified, call mark_function()
+   CT_FUNC_CALL,          // function call
+   CT_FUNC_CALL_USER,     // function call (special user)
+   CT_FUNC_DEF,           // function definition/implementation
+   CT_FUNC_TYPE,          // function type - foo in "typedef void (*foo)(void)"
+   CT_FUNC_VAR,           // foo and parent type of first parens in "void (*foo)(void)"
+   CT_FUNC_PROTO,         // function prototype
+   CT_FUNC_START,         // global DC member for functions(void ::func())
+   CT_FUNC_CLASS_DEF,     // ctor or dtor for a class
+   CT_FUNC_CLASS_PROTO,   // ctor or dtor for a class
+   CT_FUNC_CTOR_VAR,      // variable or class initialization
+   CT_FUNC_WRAP,          // macro that wraps the function name
+   CT_PROTO_WRAP,         // macro: "RETVAL PROTO_WRAP( fcn_name, (PARAMS))". Parens for PARAMS are optional.
+   CT_MACRO_FUNC,         // function-like macro
+   CT_MACRO_FUNC_CALL,    // function-like macro call
+   CT_MACRO,              // a macro def
+   CT_QUALIFIER,          // static, const, etc
+   CT_EXTERN,             // extern
+   CT_DECLSPEC,           // __declspec
+   CT_ALIGN,              // paren'd qualifier: align(4) struct a { }
    CT_TYPE,
-   CT_PTR_TYPE,         // a '*' as part of a type
-   CT_TYPE_WRAP,        // macro that wraps a type name
-   CT_CPP_LAMBDA,       // parent for '[=](...){...}'
-   CT_CPP_LAMBDA_RET,   // '->' in '[=](...) -> type {...}'
-   CT_BIT_COLON,        // a ':' in a variable declaration
+   CT_PTR_TYPE,           // a '*' as part of a type
+   CT_TYPE_WRAP,          // macro that wraps a type name
+   CT_CPP_LAMBDA,         // parent for '[=](...){...}'
+   CT_CPP_LAMBDA_RET,     // '->' in '[=](...) -> type {...}'
+   CT_EXECUTION_CONTEXT,  // Keyword for use in lambda statement: [] CT_EXECUTION_CONTEXT ()->{}
+   CT_TRAILING_RET,       // '->' in 'auto fname(...) -> type;'
+                          // '->' in 'auto fname(...) const -> type;'
+   CT_BIT_COLON,          // a ':' in a variable declaration
+   CT_ENUM_COLON,         // a ':' in a enum definition
 
    CT_OC_DYNAMIC,
    CT_OC_END,           // ObjC: @end
@@ -282,6 +314,7 @@ enum c_token_t
    CT_PP_ENDIF,         // #endif
    CT_PP_ASSERT,
    CT_PP_EMIT,
+   CT_PP_ENDASM,        // end of assembly code section
    CT_PP_ENDINPUT,
    CT_PP_ERROR,
    CT_PP_FILE,
@@ -334,6 +367,7 @@ enum c_token_t
    CT_SQL_BEGIN,        // the 'BEGINN' in 'EXEC SQL BEGIN ...'
    CT_SQL_END,          // the 'END' in 'EXEC SQL END ...'
    CT_SQL_WORD,         // CT_WORDs in the 'EXEC SQL' statement
+   CT_SQL_ASSIGN,       // :=
 
    // Vala stuff
    CT_CONSTRUCT,        // braced "construct { }" or qualifier "(construct int x)"

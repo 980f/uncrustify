@@ -1,42 +1,23 @@
-# Generated uncrustify files
-src/config.h
-src/token_names.h
-src/uncrustify_version.h
+# "Default" build tree
+/build/
 
-# Testing framework
+# PyCharm help directory
+venv/
+
+# PyCharm .run directory
+.run/
+
+# Compiled Python code
+*.pyc
+
+# Testing framework (if run_tests.py is run from the source tree)
 results/
-tests/results/
-tests/results_2/
-tests/usage.txt
-tests/pclint/
-*.sh.trs
-*.sh.log
-test-suite.log
+results_2/
 
-# UNIX build artifacts
-*.[oadisS]
-src/uncrustify
-
-# Gnu autotools
-Makefile
-Makefile.in
-/autom4te.cache
-/autoscan.log
-/autoscan-*.log
-/aclocal.m4
-/autotools/compile
-/config.h.in
-/configure
-/configure.scan
-/depcomp
-/autotools/install-sh
-/autotools/missing
-/autotools/test-driver
-/stamp-h1
-/src/stamp-h1
-config.log
-config.status
-man/uncrustify.1
+# Static analysis and code coverage
+/tests/pclint/
+/cov-int
+gcov_test/
 
 # SlickEdit workspace history and tag files
 *.vtg
@@ -47,16 +28,9 @@ man/uncrustify.1
 .lock*
 waf*
 
-# Visual Studio temporary files, build results, etc
-win32/Intermediate
-win32/Release
-win32/Debug
-win32/*.*sdf
-win32/*.suo
-win32/*.user
-win32/**/*.VC.db
-win32/**/*.obj
-win32/**/*.exe
+# KDevelop
+*.kdev4
+.kdev4/
 
 # XCode
 *.xcodeproj/*.pbxuser
@@ -67,19 +41,13 @@ win32/**/*.exe
 *.xcworkspace
 xcuserdata
 
-# Windows mingw build
-uncrustify-*-win32
-
 # Sublime
 *.sublime-workspace
 
-# Coverity
-/cov-int
-
-# TRIAGE: To clasify or remove
-.svn
-.*
-build*
+# Eclipse Configuration
+.cproject
+.project
+.settings
 
 # backup files
 #   texteditor (kate, etc.)
@@ -90,12 +58,16 @@ build*
 # uncrustified files
 *.uncrustify
 
-# Eclipse Build Directories
-Debug/
-Release/
-build/
 
-# Eclipse Configuration
-.cproject
-.project
-.settings
+# CLion
+.idea/
+cmake-build-*/
+
+# Vim
+*.swp
+
+# Clangd
+/.cache/clangd/
+
+# Compilation database
+compile_commands.json

@@ -10,150 +10,102 @@
 #ifndef LIST_MANAGER_H_INCLUDED
 #define LIST_MANAGER_H_INCLUDED
 
-/*
- * TODO: why do we provide this template class? can't we use
- * a double linked list std::deque from the standard library ?
- */
+#include "chunk.h"
+
 /**
- * A simple list manager for a double-linked list.
- * Class T must define 'next' and 'prev', which must be pointers to type T.
+ * A simple list manager for a double-linked list of Chunk items.
  */
-template<class T> class ListManager
+class ChunkListManager
 {
 protected:
-   T *first; //! pointer to the head of list
-   T *last;  //! pointer to tail of list
-
-private:
-   // Hide copy constructor
-   ListManager(const ListManager &ref)
-   {
-      first = NULL;
-      last  = NULL;
-   }
+   Chunk *m_head;  // pointer to the head of list
+   Chunk *m_tail;  // pointer to tail of list
 
 public:
-   ListManager()
+   ChunkListManager()
    {
-      first = NULL;
-      last  = NULL;
+      m_head = Chunk::NullChunkPtr;
+      m_tail = Chunk::NullChunkPtr;
    }
 
 
    /**
-    * @brief return the first element of the linked list
-    *
-    * @return pointer to first element or nullptr if list is empty
+    * @return pointer to first element of the linked list
     */
-   T *GetHead()
+   Chunk *GetHead() const
    {
-      return(first);
+      return(m_head);
    }
 
 
    /**
-    * @brief return the last element of the linked list
-    *
-    * @return pointer to last element or nullptr if list is empty
+    * @return pointer to last element of the linked list
     */
-   T *GetTail()
+   Chunk *GetTail() const
    {
-      return(last);
-   }
-
-
-   /**
-    *  @brief return the next element of the linked list
-    *
-    * @param[in] ref  pointer to current list element
-    *
-    * @return pointer to next element or nullptr if no next element exists
-    */
-   T *GetNext(T *ref)
-   {
-      return((ref != NULL) ? ref->next : NULL);
-   }
-
-
-   /**
-    * @brief return the previous element of the linked list
-    *
-    * @param[in] ref  pointer to current list element
-    *
-    * @return pointer to previous element or nullptr if no previous element exists
-    */
-   T *GetPrev(T *ref)
-   {
-      return((ref != NULL) ? ref->prev : NULL);
-   }
-
-
-   void InitEntry(T *obj) const
-   {
-      if (obj != NULL)
-      {
-         obj->next = NULL;
-         obj->prev = NULL;
-      }
+      return(m_tail);
    }
 
 
    /**
     * @brief remove an element from a linked list
-    *
-    * @param[in] obj  list element to remove
+    * @param[in] obj chunk to remove from the list
     */
-   void Pop(T *obj)
+   void Remove(Chunk *obj)
    {
-      if (obj != NULL)
+      if (obj != Chunk::NullChunkPtr)
       {
-         if (first == obj)
+         if (m_head == obj)
          {
-            first = obj->next;
+            m_head = obj->m_next;
          }
-         if (last == obj)
+
+         if (m_tail == obj)
          {
-            last = obj->prev;
+            m_tail = obj->m_prev;
          }
-         if (obj->next != NULL)
+
+         if (obj->m_next != Chunk::NullChunkPtr)
          {
-            obj->next->prev = obj->prev;
+            obj->m_next->m_prev = obj->m_prev;
          }
-         if (obj->prev != NULL)
+
+         if (obj->m_prev != Chunk::NullChunkPtr)
          {
-            obj->prev->next = obj->next;
+            obj->m_prev->m_next = obj->m_next;
          }
-         obj->next = NULL;
-         obj->prev = NULL;
+         obj->m_next = Chunk::NullChunkPtr;
+         obj->m_prev = Chunk::NullChunkPtr;
       }
    }
 
 
    //! swap two elements of a list
-   void Swap(T *obj1, T *obj2)
+   void Swap(Chunk *obj1, Chunk *obj2)
    {
-      if (obj1 != NULL && obj2 != NULL)
+      if (  obj1 != Chunk::NullChunkPtr
+         && obj2 != Chunk::NullChunkPtr)
       {
-         if (obj1->prev == obj2)
+         if (obj1->m_prev == obj2)
          {
-            Pop(obj1);
+            Remove(obj1);
             AddBefore(obj1, obj2);
          }
-         else if (obj2->prev == obj1)
+         else if (obj2->m_prev == obj1)
          {
-            Pop(obj2);
+            Remove(obj2);
             AddBefore(obj2, obj1);
          }
          else
          {
-            T *prev1 = obj1->prev;
-            Pop(obj1);
+            Chunk *m_prev1 = obj1->m_prev;
+            Remove(obj1);
 
-            T *prev2 = obj2->prev;
-            Pop(obj2);
+            Chunk *m_prev2 = obj2->m_prev;
+            Remove(obj2);
 
-            AddAfter(obj1, prev2);
-            AddAfter(obj2, prev1);
+            AddAfter(obj1, m_prev2);
+            AddAfter(obj2, m_prev1);
          }
       }
    }
@@ -165,22 +117,23 @@ public:
     * @param obj  new element to add to list
     * @param ref  chunk after which to insert new object
     */
-   void AddAfter(T *obj, T *ref)
+   void AddAfter(Chunk *obj, Chunk *ref)
    {
-      if (obj != NULL && ref != NULL)
+      if (  obj != Chunk::NullChunkPtr
+         && ref != Chunk::NullChunkPtr)
       {
-         Pop(obj); // TODO: is this necessary?
-         obj->next = ref->next;
-         obj->prev = ref;
-         if (ref->next != NULL)
+         obj->m_next = ref->m_next;
+         obj->m_prev = ref;
+
+         if (ref->m_next != Chunk::NullChunkPtr)
          {
-            ref->next->prev = obj;
+            ref->m_next->m_prev = obj;
          }
          else
          {
-            last = obj;
+            m_tail = obj;
          }
-         ref->next = obj;
+         ref->m_next = obj;
       }
    }
 
@@ -191,22 +144,24 @@ public:
     * @param obj  new element to add to list
     * @param ref  chunk before to insert new object
     */
-   void AddBefore(T *obj, T *ref)
+   void AddBefore(Chunk *obj, Chunk *ref)
    {
-      if (obj != NULL && ref != NULL)
+      if (  obj != Chunk::NullChunkPtr
+         && ref != Chunk::NullChunkPtr)
       {
-         Pop(obj);
-         obj->next = ref;
-         obj->prev = ref->prev;
-         if (ref->prev != NULL)
+         Remove(obj);
+         obj->m_next = ref;
+         obj->m_prev = ref->m_prev;
+
+         if (ref->m_prev != Chunk::NullChunkPtr)
          {
-            ref->prev->next = obj;
+            ref->m_prev->m_next = obj;
          }
          else
          {
-            first = obj;
+            m_head = obj;
          }
-         ref->prev = obj;
+         ref->m_prev = obj;
       }
    }
 
@@ -216,20 +171,21 @@ public:
     *
     * @param obj  new element to add to the list
     */
-   void AddTail(T *obj)
+   void AddTail(Chunk *obj)
    {
-      obj->next = NULL;
-      obj->prev = last;
-      if (last == NULL)
+      obj->m_next = Chunk::NullChunkPtr;
+      obj->m_prev = m_tail;
+
+      if (m_tail == Chunk::NullChunkPtr)
       {
-         last  = obj;
-         first = obj;
+         m_tail = obj;
+         m_head = obj;
       }
       else
       {
-         last->next = obj;
+         m_tail->m_next = obj;
       }
-      last = obj;
+      m_tail = obj;
    }
 
 
@@ -238,20 +194,21 @@ public:
     *
     * @param obj  new element to add to the list
     */
-   void AddHead(T *obj)
+   void AddHead(Chunk *obj)
    {
-      obj->next = first;
-      obj->prev = NULL;
-      if (first == NULL)
+      obj->m_next = m_head;
+      obj->m_prev = Chunk::NullChunkPtr;
+
+      if (m_head == Chunk::NullChunkPtr)
       {
-         last  = obj;
-         first = obj;
+         m_tail = obj;
+         m_head = obj;
       }
       else
       {
-         first->prev = obj;
+         m_head->m_prev = obj;
       }
-      first = obj;
+      m_head = obj;
    }
 };
 

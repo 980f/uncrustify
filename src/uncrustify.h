@@ -1,6 +1,6 @@
 /**
  * @file uncrustify.h
- * prototypes for uncrustify.c
+ * prototypes for uncrustify.cpp
  *
  * @author  Ben Gardner
  * @license GPL v2+
@@ -8,32 +8,21 @@
 #ifndef UNCRUSTIFY_H_INCLUDED
 #define UNCRUSTIFY_H_INCLUDED
 
-#include <stdio.h>
-#include "token_enum.h"
-#include "log_levels.h"
-#include "base_types.h"
 #include "uncrustify_types.h"
 
-int load_header_files(void);
+#include <stdio.h>
 
 
-void uncrustify_file(const file_mem &fm, FILE *pfout, const char *parsed_file, bool defer_uncrustify_end = false);
+int load_header_files();
+
+
+void uncrustify_file(const file_mem &fm, FILE *pfout, const char *parsed_file, const char *dump_filename, bool is_quiet, bool defer_uncrustify_end = false);
 
 
 void uncrustify_end();
 
 
-const char *get_token_name(c_token_t token);
-
-
-/**
- * Gets the tag text for a language
- *
- * @param lang  The LANG_xxx enum
- *
- * @return A string
- */
-const char *language_name_from_flags(size_t lang);
+const char *get_token_name(E_Token token);
 
 
 /**
@@ -41,10 +30,7 @@ const char *language_name_from_flags(size_t lang);
  *
  * @return token, will be CT_NONE on failure to match
  */
-c_token_t find_token_name(const char *text);
-
-
-void log_pcf_flags(log_sev_t sev, UINT64 flags);
+E_Token find_token_name(const char *text);
 
 
 /**
@@ -75,21 +61,9 @@ const char *path_basename(const char *path);
 int path_dirname_len(const char *filename);
 
 
-void usage_exit(const char *msg, const char *argv0, int code);
+void usage(const char *argv0);
 
 
-/**
- * Set idx = 0 before the first call.
- * Done when returns nullptr
- */
-const char *get_file_extension(int &idx);
-
-
-//! Prints custom file extensions to the file
-void print_extensions(FILE *pfile);
-
-
-const char *extension_add(const char *ext_text, const char *lang_text);
-
+void usage_error(const char *msg = nullptr);
 
 #endif /* UNCRUSTIFY_H_INCLUDED */

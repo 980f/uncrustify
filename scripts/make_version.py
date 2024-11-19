@@ -17,12 +17,6 @@ else:
     from os import EX_IOERR, EX_OK, EX_USAGE
 
 def main(args):
-    is_debug_build = False
-
-    if len(args) > 0:
-        is_debug_build = str(args[0]).lower() == "debug"
-
-
     root = dirname(dirname(abspath(__file__)))
     git_path = join(root, '.git')
     hg_path = join(root, '.hg')
@@ -47,7 +41,7 @@ def main(args):
             node = node_b.decode("UTF-8")
             error_txt = "%d: %s" % (proc0.returncode, error_txt_b.decode("UTF-8").strip().lower())
 
-            proc1 = Popen(['git', '--git-dir=.hg/git', 'describe', '--long', '--tags','--always', node], stdout=PIPE, stderr=PIPE, cwd=root)
+            proc1 = Popen(['git', '--git-dir=.hg/git', 'describe', '--long', '--tags', '--always', node], stdout=PIPE, stderr=PIPE, cwd=root)
             txt_b, error_txt_b = proc1.communicate()
             txt = txt_b.decode("UTF-8").lower()
             error_txt += ", %d: %s" % (proc1.returncode, error_txt_b.decode("UTF-8").strip().lower())
@@ -65,10 +59,10 @@ def main(args):
             (\d+\.\d+(\.\d+)?) #2: version 0.64.2 (,#3 optional 3rd nr)
             (                  #4: additional version info (long string format)
                 -(\d+)         #5: tag commit distance
-                -g(\w{7,8})    #g-prefix + #6: commithash
+                -g(\w{7,})     #g-prefix + #6: commithash
             )?
         |
-            (\w{7,8})          #7: commithash only format (last N commits pulled and no tag available)
+            (\w{7,})           #7: commithash only format (last N commits pulled and no tag available)
         )
         (-(dirty))?            #9: optional dirty specifier (#8,)
         $
@@ -78,11 +72,6 @@ def main(args):
     if r_match is None:
         print("Regex version match failed on: '%s' (%s)" % (txt, error_txt))
         exit(EX_IOERR)
-
-    version_string = "Uncrustify"
-    if is_debug_build:
-        version_string += "_d"
-
 
     if r_match.group(2) is not None:
         string_groups = [r_match.group(2)]
@@ -96,13 +85,12 @@ def main(args):
         string_groups.append(r_match.group(9))
 
 
-    for group_txt in string_groups:
-        if group_txt is None:
+    for g in string_groups:
+        if g is None:
             print("Unexpected empty regex group")
             exit(EX_IOERR)
-        version_string += "-" + group_txt
 
-    print("%s" % version_string)
+    print("%s" % "-".join(string_groups))
     return EX_OK
 
 

@@ -1,10 +1,11 @@
 /**
  * @file braces.h
- * prototypes for braces.c
+ * prototypes for braces.cpp
  *
  * @author  Ben Gardner
  * @license GPL v2+
  */
+
 #ifndef BRACES_H_INCLUDED
 #define BRACES_H_INCLUDED
 
@@ -12,21 +13,21 @@
 
 
 //! Change virtual braces into real braces
-void do_braces(void);
+void do_braces();
 
 /**
  * See the preprocessor counterpart:
  *   add_long_preprocessor_conditional_block_comment
- * in defines.cpp
+ * in output.cpp
  */
-void add_long_closebrace_comment(void);
+void add_long_closebrace_comment();
 
 
 /**
  * Adds a comment after the ref chunk
- * Returns the added chunk or nullptr
+ * Returns the added chunk or Chunk::NullChunkPtr
  */
-chunk_t *insert_comment_after(chunk_t *ref, c_token_t cmt_type, const unc_text &cmt_text);
+Chunk *insert_comment_after(Chunk *ref, E_Token cmt_type, const UncText &cmt_text);
 
 
 #endif /* BRACES_H_INCLUDED */

@@ -1,6 +1,6 @@
 /**
  * @file semicolons.h
- * prototypes for semicolons.c
+ * prototypes for semicolons.cpp
  *
  * @author  Ben Gardner
  * @license GPL v2+
@@ -20,7 +20,7 @@
  *  - after an open brace
  *  - when not in a #DEFINE
  */
-void remove_extra_semicolons(void);
+void remove_extra_semicolons();
 
 
 #endif /* SEMICOLONS_H_INCLUDED */

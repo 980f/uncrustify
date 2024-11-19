@@ -3,86 +3,194 @@ Author:
 
 Maintenance:
 Guy Maurel
+Michele Calgaro
+Matthew Woehlke
 
+until 2022-11-22:
 Other collaborators:
+Adam Ernst
+Alan Fineberg
+Alexander GQ Gerasiov
+Alex Henrie
+André Berg
+Andrei Alexandrescu
+Andrey Starodubtsev
+Anirban Pramanick
+Antti Tapaninen
+Arne Forlie
+Arseniy Shestakov
+asobhy
+atauzki
+Aurélien Gâteau
+Benio
+Ben Iofel
+Ben Mayo
+Beren Minor
+Bi-Ruei, Chiu
+Biswa96
+Biswapriyo Nath
+B. Kevin Hardman
+Bogdan Popescu
+Brandon Slack
+Brecht Sanders
+Brendan Long
+Brian Kelley
+CharlieYJH
+Chris Lalancette
+Clemens Rabe
+Clint Lawrence
+Code Able
+Cody Schafer
+Corentin Noël
+Dandielo
+Daniel Chumak
+Daniele Bartolini
+Dan Rose
+Dave Lee
+David Catmull
+David E. O'Brien
+David Lechner
+David Schaefgen
 Dirk Thomas
+Dittrich, Rico
+Dmitry Marakasov
+Dmitry Povolotsky
+Dmytro Povolotskyi
+Dundar Göc
 Dženan Zukić
-Guy Maurel
+Eism
+Emerson Knapp
+Emmanuel Christophe
+epac-tom
+Ethan Gao
+Florin Pop
+Frank J. T. Wojcik
+Gary Ash
+Ger Hobbelt
+guy maurel
+Hackerpilot
+Hannes Schmidt
+hghdev
+Huang-Ming Huang
+Husk3r
+Ilya Lyubimov
+Ingo Brückl
+Ivan Nazarenko
+Ivan Romanov
+Jakub Lukasiewicz
+Jakub Łukasiewicz
 Jakub Schmidtke
+Jan Weiß
+Jason
+JavDevGames
+Jean-Christophe Fillion-Robin
+Jean YNE
+Jeremy H
+Jeremy T Hilliker
+Jim Meyering
+Jiri Hruska
+jodi.the.tigger@gmail.com
+Jody Hagins
+Joel Ostraat
 Joergen Ibsen
+Johnny Oskarsson
+Jonas Hurrelmann
+Jorengarenar
+Joshua Gross
+Joshua Parker
+Julian Picht
+Kalle Raiskila
+Keepun
+Kevin Wong
+krys
+Laurent Tréguier
+Lauri Kasanen
+lbmaian
+Leon Breedt
+Lorenz Haas
+Lykurg
+Maciej Bogusz
+Manning, James
+Marco Stephan
+Marcus Nilsson
+Marek Fort
+Marius Zwicker
+Mark Stegeman
+Markus Geimer
+Martin Delille
+Martin Simonovsky
+Martin Storsjo
+Matthew McDole
+Matthew Woehlke
+Maxim Mikityanskiy
+Max Smolens
+MeXx
+Michaël Peeters
+Michele Calgaro
 Mihai Popescu
+Mike
+Mike Gelfand
+Mirko König
+mjbogusz
+MrTheMake
+Nate
+neok-m4700
+Nico Decker
+Oleg Liatte
+Oleg Smolsky
+Owen Rudge
+Pat Notz
+Patrick Rohr
+Paul Cercueil
+Paul Smith
+Pavel Geiger
+Paweł Benetkiewicz
+PerfectCarl
+Peter Bruin
+Peter Hartley
+Peter Jonas
+Peter Kolbus
+Peter Tao
+Peter Waller
+Pete Tao
+Piet Van Reepingen
+PMheart
+Rafael Kitover
+Randolph R. Settgast
+Randolph Settgast
+RaveTheTadpole
+Ray Strode
+Richard Maxwell
+Ricky Lopez
+Roland Schulz
+Roman Gordienko
+Ryan Maxwell
+Samish Chandra Kolli
+Samish Kolli
 Scott Bilas
-
- Alan Fineberg
- André Berg
- Anirban Pramanick
- B. Kevin Hardman
- Ben Gardner
- Ben Iofel
- Beren Minor
- Corentin Noël
- Daniel Chumak
- Dave Lee
- David Catmull
- David Schaefgen
- Dirk Thomas
- Dittrich, Rico
- Dženan Zukić
- Emmanuel Christophe
- Florin Pop
- Gary Ash
- Ger Hobbelt
- Gilles
- Guy Maurel
- Hackerpilot
- Hannes Schmidt
- Huang-Ming Huang
- Ilya Lyubimov
- Ingo Brückl
- Ivan Nazarenko
- Jakub Schmidtke
- Jan Weiß
- Jason
- Jim Meyering
- Joergen Ibsen
- Jonas Hurrelmann
- Joshua Gross
- Julian Picht
- Keepun
- Lauri Kasanen
- Leon Breedt
- Lorenz Haas
- Lykurg
- Marek Fort
- Marius Zwicker
- Markus Geimer
- Martin Simonovsky
- Matthew McDole
- MeXx
- Mihai Popescu
- Mike
- Mirko König
- Nate
- Nico Decker
- Oleg Smolsky
- Owen Rudge
- Pat Notz
- Paul Smith
- PerfectCarl
- Peter Hartley
- Peter Waller
- RaveTheTadpole
- Roland Schulz
- Ryan Maxwell
- S. Gilles
- Scott Bilas
- Shazron Abdullah
- Siddharth Kannan
- Stephen Gilles
- Tim Hütz
- Timotheus Pokorra
- Todd Richmond
- Twigz
- Vadim Zeitlin
- Vincent Rouillé
- Vyacheslav Shegai
+Sebastian Andersson
+Sebastian Bilek
+S. Gilles
+Shazron Abdullah
+Siddharth Kannan
+Slávek Banko
+Spark-NF
+Stefan Koch
+Stefan Nunninger
+Stephen Gilles
+Steven Lee
+Suhaib Ishaque
+t-bltg
+Tim Hütz
+Timotheus Pokorra
+Todd Richmond
+Twigz
+U-RDEC\ParkerJS
+Vadim Zeitlin
+Viktor Kireev
+Vincent Rouillé
+Vojtěch Balík
+Vyacheslav Shegai
+Waldir Pimenta
+Yannick Bühler
+Yegor Yefremov

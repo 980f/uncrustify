@@ -1,6 +1,6 @@
 /**
  * @file detect.h
- * prototypes for detect.c
+ * prototypes for detect.cpp
  *
  * @author  Ben Gardner
  * @license GPL v2+
@@ -10,7 +10,7 @@
 
 
 //! Call all the detect_xxxx() functions
-void detect_options(void);
+void detect_options();
 
 
 #endif /* DETECT_H_INCLUDED */

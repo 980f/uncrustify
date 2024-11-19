@@ -5,19 +5,20 @@
  * @author  Ben Gardner
  * @license GPL v2+
  */
+
 #include "ChunkStack.h"
-#include <cstdio>
-#include <cstdlib>
 
 
 void ChunkStack::Set(const ChunkStack &cs)
 {
    m_cse.resize(cs.m_cse.size());
+
    for (size_t idx = 0; idx < m_cse.size(); idx++)
    {
       m_cse[idx].m_pc     = cs.m_cse[idx].m_pc;
       m_cse[idx].m_seqnum = cs.m_cse[idx].m_seqnum;
    }
+
    m_seqnum = cs.m_seqnum;
 }
 
@@ -42,19 +43,19 @@ const ChunkStack::Entry *ChunkStack::Get(size_t idx) const
 }
 
 
-chunk_t *ChunkStack::GetChunk(size_t idx) const
+Chunk *ChunkStack::GetChunk(size_t idx) const
 {
    if (idx < m_cse.size())
    {
       return(m_cse[idx].m_pc);
    }
-   return(nullptr);
+   return(Chunk::NullChunkPtr);
 }
 
 
-chunk_t *ChunkStack::Pop_Front()
+Chunk *ChunkStack::Pop_Front()
 {
-   chunk_t *pc = nullptr;
+   Chunk *pc = Chunk::NullChunkPtr;
 
    if (!m_cse.empty())
    {
@@ -65,9 +66,9 @@ chunk_t *ChunkStack::Pop_Front()
 }
 
 
-chunk_t *ChunkStack::Pop_Back()
+Chunk *ChunkStack::Pop_Back()
 {
-   chunk_t *pc = nullptr;
+   Chunk *pc = Chunk::NullChunkPtr;
 
    if (!m_cse.empty())
    {
@@ -78,9 +79,10 @@ chunk_t *ChunkStack::Pop_Back()
 }
 
 
-void ChunkStack::Push_Back(chunk_t *pc, size_t seqnum)
+void ChunkStack::Push_Back(Chunk *pc, size_t seqnum)
 {
    m_cse.push_back(Entry(seqnum, pc));
+
    if (m_seqnum < seqnum)
    {
       m_seqnum = seqnum;
@@ -92,7 +94,7 @@ void ChunkStack::Zap(size_t idx)
 {
    if (idx < m_cse.size())
    {
-      m_cse[idx].m_pc = nullptr;
+      m_cse[idx].m_pc = Chunk::NullChunkPtr;
    }
 }
 
@@ -103,7 +105,7 @@ void ChunkStack::Collapse()
 
    for (size_t rd_idx = 0; rd_idx < m_cse.size(); rd_idx++)
    {
-      if (m_cse[rd_idx].m_pc != nullptr)
+      if (m_cse[rd_idx].m_pc->IsNotNullChunk())
       {
          if (rd_idx != wr_idx)
          {
@@ -113,5 +115,6 @@ void ChunkStack::Collapse()
          wr_idx++;
       }
    }
+
    m_cse.resize(wr_idx);
 }
